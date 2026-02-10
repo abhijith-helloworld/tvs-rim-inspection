@@ -20,9 +20,28 @@ import {
     Loader2,
     LogOut,
     Bot,
+    Eye,
+    ClipboardCheck,
+    XCircle,
 } from "lucide-react";
 
 import { fetchWithAuth, API_BASE_URL, tokenStorage } from "../lib/auth";
+
+interface InspectionSummary {
+    total: number;
+    defected: number;
+    non_defected: number;
+    approved: number;
+    human_verified: number;
+    pending_verification: number;
+}
+
+interface ScheduleSummary {
+    total: number;
+    scheduled: number;
+    processing: number;
+    completed: number;
+}
 
 interface RobotApi {
     id: number;
@@ -36,6 +55,8 @@ interface RobotApi {
     inspection_status: "PENDING" | "COMPLETED";
     last_inspected_at: string | null;
     is_active: boolean;
+    inspection_summary: InspectionSummary;
+    schedule_summary: ScheduleSummary;
 }
 
 interface RobotsApiResponse {
@@ -98,6 +119,8 @@ interface Robot {
     firmware_version?: string;
     robo_id?: string;
     batteryInfo?: BatteryInfo;
+    inspection_summary?: InspectionSummary;
+    schedule_summary?: ScheduleSummary;
 }
 
 interface DashboardData {
@@ -109,15 +132,15 @@ interface DashboardData {
 const Dashboard: React.FC = () => {
     const [data, setData] = useState<DashboardData>({
         defects: {
-            totalDetected: 124,
-            totalScanned: 856,
-            criticalDefects: 18,
-            minorDefects: 106,
+            totalDetected: 0,
+            totalScanned: 0,
+            criticalDefects: 0,
+            minorDefects: 0,
         },
         schedules: {
-            completed: 42,
-            pending: 8,
-            total: 50,
+            completed: 0,
+            pending: 0,
+            total: 0,
         },
         battery: {
             level: 78,
@@ -132,19 +155,42 @@ const Dashboard: React.FC = () => {
     const [wsStatus, setWsStatus] = useState<
         Map<string, "connected" | "disconnected" | "connecting">
     >(new Map());
+    const [selectedRobotId, setSelectedRobotId] = useState<number | null>(null);
     const router = useRouter();
     const websocketsRef = useRef<Map<string, WebSocket>>(new Map());
 
-    const handleClick = (robotId: number) => {
-        console.log("Single click - defects", robotId);
-        router.push(`/userDashboard/${robotId}`);
+    const handleRobotClick = (robotId: number) => {
+        // If clicking the same robot, navigate to detail page
+        if (selectedRobotId === robotId) {
+            console.log("Navigating to robot detail", robotId);
+            router.push(`/userDashboard/${robotId}`);
+        } else {
+            // Otherwise, select the robot and update inspection summary
+            console.log("Selected robot", robotId);
+            setSelectedRobotId(robotId);
+            
+            const selectedRobot = robots.find(r => r.id === robotId);
+            if (selectedRobot?.inspection_summary) {
+                setData((prevData) => ({
+                    ...prevData,
+                    defects: {
+                        totalDetected: selectedRobot.inspection_summary!.defected,
+                        totalScanned: selectedRobot.inspection_summary!.total,
+                        criticalDefects: selectedRobot.inspection_summary!.defected,
+                        minorDefects: selectedRobot.inspection_summary!.non_defected,
+                    },
+                }));
+            }
+        }
     };
 
     const [time, setTime] = useState<string>(new Date().toLocaleTimeString());
 
     // Calculate defect rate
     const defectRate =
-        (data.defects.totalDetected / data.defects.totalScanned) * 100;
+        data.defects.totalScanned > 0
+            ? (data.defects.totalDetected / data.defects.totalScanned) * 100
+            : 0;
 
     // Determine which defect is higher
     const higherDefect =
@@ -230,7 +276,7 @@ const Dashboard: React.FC = () => {
                             const working_hours =
                                 Number(payload.data?.working_hours) || 0;
                             const drop_percent =
-                                Number(payload.data?.drop_percentage) || 0; // Changed from drop_percent
+                                Number(payload.data?.drop_percentage) || 0;
                             const sequence =
                                 Number(payload.data?.sequence) || 0;
 
@@ -357,10 +403,27 @@ const Dashboard: React.FC = () => {
                         ip_address: robot.local_ip ?? undefined,
                         last_seen: robot.last_inspected_at ?? undefined,
                         robo_id: robot.robo_id,
+                        inspection_summary: robot.inspection_summary,
+                        schedule_summary: robot.schedule_summary,
                     }));
 
                 setRobots(formattedRobots);
                 setError(null);
+
+                // Update Defect Analysis section with first robot's data (initially)
+                if (formattedRobots.length > 0 && formattedRobots[0].inspection_summary && !selectedRobotId) {
+                    const firstRobotInspection = formattedRobots[0].inspection_summary;
+                    setData((prevData) => ({
+                        ...prevData,
+                        defects: {
+                            totalDetected: firstRobotInspection.defected,
+                            totalScanned: firstRobotInspection.total,
+                            criticalDefects: firstRobotInspection.defected,
+                            minorDefects: firstRobotInspection.non_defected,
+                        },
+                    }));
+                    setSelectedRobotId(formattedRobots[0].id);
+                }
 
                 // Setup WebSocket for each robot
                 formattedRobots.forEach((robot) => {
@@ -422,6 +485,9 @@ const Dashboard: React.FC = () => {
             window.location.href = "/login";
         }
     };
+
+    // Get selected robot for display
+    const selectedRobot = robots.find(r => r.id === selectedRobotId);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white text-slate-800 p-6 md:p-6 font-sans">
@@ -524,21 +590,30 @@ const Dashboard: React.FC = () => {
                                 </div>
                             ) : (
                                 robots.map((robot) => (
-                                    <div key={robot.id} className="group">
+                                    <div 
+                                        key={robot.id} 
+                                        className="group relative"
+                                    >
                                         {/* Robot Card */}
                                         <div
-                                            onClick={() =>
-                                                handleClick(robot.id)
-                                            }
-                                            className="relative p-4 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 cursor-pointer transition-all duration-200 hover:shadow-sm"
+                                            onClick={() => handleRobotClick(robot.id)}
+                                            className={`relative p-4 rounded-lg border cursor-pointer transition-all duration-200 hover:shadow-sm ${
+                                                selectedRobotId === robot.id 
+                                                    ? 'border-emerald-400 bg-emerald-50/50 shadow-sm' 
+                                                    : 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30'
+                                            }`}
                                         >
                                             <div className="flex items-center justify-between">
                                                 {/* Left: Robot Info */}
                                                 <div className="flex items-center gap-4">
                                                     {/* Robot Avatar with Status */}
                                                     <div className="relative">
-                                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
-                                                            <Bot className="text-slate-400" />
+                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                                                            selectedRobotId === robot.id 
+                                                                ? 'bg-gradient-to-br from-emerald-100 to-emerald-200'
+                                                                : 'bg-gradient-to-br from-slate-100 to-slate-200'
+                                                        }`}>
+                                                            <Bot className={selectedRobotId === robot.id ? 'text-emerald-600' : 'text-slate-400'} />
                                                         </div>
                                                         {/* Status Indicator */}
                                                         <div
@@ -560,10 +635,13 @@ const Dashboard: React.FC = () => {
                                                     {/* Robot Details */}
                                                     <div>
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            <h3 className="font-semibold text-slate-900 group-hover:text-emerald-700 transition-colors">
+                                                            <h3 className={`font-semibold transition-colors ${
+                                                                selectedRobotId === robot.id 
+                                                                    ? 'text-emerald-700'
+                                                                    : 'text-slate-900 group-hover:text-emerald-700'
+                                                            }`}>
                                                                 {robot.name}
                                                             </h3>
-
 
                                                             {robot.ip_address && (
                                                                 <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">
@@ -603,7 +681,6 @@ const Dashboard: React.FC = () => {
                                                                     }
                                                                     %
                                                                 </span>
-                                                            
                                                             </div>
                                                             <div className="flex items-center gap-1.5">
                                                                 <Clock className="w-4 h-4 text-slate-400" />
@@ -619,17 +696,6 @@ const Dashboard: React.FC = () => {
 
                                                 {/* Right: Action & Status */}
                                                 <div className="flex items-center gap-4">
-                                                    {/* Current Task */}
-                                                    <div className="text-right hidden md:block">
-                                                        <div className="text-xs text-slate-500 mb-1">
-                                                            Current Task
-                                                        </div>
-                                                        <div className="text-sm font-medium text-slate-900">
-                                                            {robot.task ||
-                                                                "Idle"}
-                                                        </div>
-                                                    </div>
-
                                                     {/* Status Badge */}
                                                     <div
                                                         className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
@@ -654,7 +720,9 @@ const Dashboard: React.FC = () => {
                                                     </div>
 
                                                     {/* Arrow Indicator */}
-                                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                    <div className={`transition-opacity duration-200 ${
+                                                        selectedRobotId === robot.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                                    }`}>
                                                         <svg
                                                             className="w-5 h-5 text-emerald-500"
                                                             fill="none"
@@ -697,6 +765,14 @@ const Dashboard: React.FC = () => {
                                                     />
                                                 </div>
                                             </div>
+
+                                            {/* Helper Text */}
+                                            {selectedRobotId === robot.id && (
+                                                <div className="mt-2 text-xs text-emerald-600 flex items-center gap-1">
+                                                    <Eye className="w-3 h-3" />
+                                                    <span>Click again to view details • Inspection summary shown on right →</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ))
@@ -716,7 +792,7 @@ const Dashboard: React.FC = () => {
                                     size={24}
                                 />
                                 <span className="text-slate-800">
-                                    Defect Analysis
+                                    Inspection Summary
                                 </span>
                             </h2>
                             <div className="px-3 py-1.5 bg-slate-50 rounded-lg text-xs font-medium border border-slate-200/50">
@@ -724,16 +800,30 @@ const Dashboard: React.FC = () => {
                                     Scan Success:{" "}
                                 </span>
                                 <span className="text-emerald-600 font-semibold">
-                                    {(
-                                        ((data.defects.totalScanned -
-                                            data.defects.totalDetected) /
-                                            data.defects.totalScanned) *
-                                        100
-                                    ).toFixed(1)}
+                                    {data.defects.totalScanned > 0
+                                        ? (
+                                              ((data.defects.totalScanned -
+                                                  data.defects.totalDetected) /
+                                                  data.defects.totalScanned) *
+                                              100
+                                          ).toFixed(1)
+                                        : "0.0"}
                                     %
                                 </span>
                             </div>
                         </div>
+
+                        {/* Show selected robot name */}
+                        {selectedRobot && (
+                            <div className="mb-4 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                                <div className="flex items-center gap-2">
+                                    <Bot className="w-4 h-4 text-emerald-600" />
+                                    <span className="text-sm font-medium text-emerald-900">
+                                        Showing data for: {selectedRobot.name}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
                             <div className="bg-slate-50/70 p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">

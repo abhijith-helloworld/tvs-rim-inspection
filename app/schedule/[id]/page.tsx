@@ -36,7 +36,7 @@ interface Schedule {
 
 interface RobotData {
     id: number;
-    robo_id: string; // ✅ "rb1" - This is what we need for WebSocket
+    robo_id: string;
     name: string;
     robot_type: string;
     model_number: string | null;
@@ -73,7 +73,7 @@ interface FilterData {
 }
 
 interface ScheduleListPageProps {
-    robotId: string | number; // Database ID (e.g., "1")
+    robotId: string | number;
 }
 
 /* ===================== MAIN COMPONENT ===================== */
@@ -86,7 +86,7 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
     /* ===================== STATE ===================== */
     const [schedules, setSchedules] = useState<Schedule[]>([]);
     const [robotData, setRobotData] = useState<RobotData | null>(null);
-    const [roboId, setRoboId] = useState<string | null>(null); // ✅ robo_id from API (e.g., "rb1")
+    const [roboId, setRoboId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -148,7 +148,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
                 setLoading(true);
                 console.log(`📡 Fetching robot data for database ID: ${robotDbId}`);
 
-                // ✅ Fetch robot data using database ID
                 const response = await fetchWithAuth(
                     `${API_BASE_URL}/robots/${robotDbId}/`
                 );
@@ -164,11 +163,9 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
                     throw new Error(result.message || "Failed to fetch robot data");
                 }
 
-                // ✅ Extract robot data
                 const robot = result.data as RobotData;
                 setRobotData(robot);
 
-                // ✅ CRITICAL: Extract robo_id for WebSocket (e.g., "rb1")
                 console.log("🔍 Extracting robo_id from robot data:", robot.robo_id);
                 setRoboId(robot.robo_id);
 
@@ -237,7 +234,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
                 throw new Error(result.message || "Failed to fetch schedules");
             }
 
-            // ✅ Sort schedules by date (newest first)
             const sortedSchedules = [...(result.schedules || [])].sort(
                 (a, b) => {
                     const dateA = new Date(
@@ -280,7 +276,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
     /* ===================== STEP 6: Setup WebSocket with robo_id ===================== */
     useEffect(() => {
-        // ✅ Only setup WebSocket when we have robo_id
         if (!roboId) {
             console.warn("⏭️  Waiting for robo_id from robot data:", {
                 roboId,
@@ -291,20 +286,17 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
         console.log("🔌 Setting up WebSocket with robo_id:", roboId);
 
-        // ✅ Create WebSocket manager with robo_id
         wsManagerRef.current = new RobotWebSocketManager({
-            robotId: roboId, // ✅ Pass robo_id (e.g., "rb1") to WebSocket
+            robotId: roboId,
             baseUrl: "ws://192.168.1.100:8002",
             onScheduleUpdated: () => {
                 console.log("📅 Schedule updated event received from WebSocket!");
                 console.log("⏳ Refreshing schedule data in 1 second...");
 
-                // Clear any pending refresh
                 if (refreshTimeoutRef.current) {
                     clearTimeout(refreshTimeoutRef.current);
                 }
 
-                // ✅ Refresh data after 1 second
                 refreshTimeoutRef.current = setTimeout(() => {
                     console.log("🔄 Executing refresh from WebSocket trigger");
                     fetchFilteredData();
@@ -325,13 +317,11 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
             },
         });
 
-        // ✅ Connect to WebSocket
         wsManagerRef.current.connect().catch((err) => {
             console.error("❌ Failed to connect WebSocket:", err);
             setWsError(err.message);
         });
 
-        // ✅ Cleanup on unmount
         return () => {
             console.log("🧹 Cleaning up WebSocket");
             if (wsManagerRef.current) {
@@ -341,7 +331,7 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
                 clearTimeout(refreshTimeoutRef.current);
             }
         };
-    }, [roboId, fetchFilteredData]); // ✅ Depend on roboId
+    }, [roboId, fetchFilteredData]);
 
     /* ===================== HANDLE PAGE CHANGE ===================== */
     const handlePageChange = (page: number) => {
@@ -607,6 +597,7 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
                                 <ScheduleCard
                                     schedule={schedule}
                                     onClick={handleScheduleClick}
+                                    onUpdate={fetchFilteredData}
                                 />
                             </div>
                         ))}

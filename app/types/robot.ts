@@ -1,4 +1,5 @@
 export interface Robot {
+  [x: string]: number;
   id: number;
   robo_id: string;
   name: string;

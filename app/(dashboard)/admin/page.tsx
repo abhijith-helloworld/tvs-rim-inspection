@@ -134,7 +134,9 @@ export default function RobotManagementPage() {
         const newStatus = !currentStatus;
 
         setRobots((prev) =>
-            prev.map((r) => (r.id === id ? { ...r, is_active: newStatus } : r)),
+            prev.map((r) =>
+                r.id === id ? { ...r, is_active: newStatus } : r,
+            ),
         );
 
         try {
@@ -177,6 +179,7 @@ export default function RobotManagementPage() {
         robo_id: string;
         name: string;
         local_ip: string;
+        minimum_battery_charge: number;
     }) => {
         setSaving(true);
 
@@ -220,7 +223,7 @@ export default function RobotManagementPage() {
 
         try {
             const res = await fetchWithAuth(
-                `${ROBOT_API}${confirmModal.robotId}/`,
+                `${ROBOT_API}${confirmModal.robotId}/?force=true`,
                 {
                     method: "DELETE",
                 },
@@ -230,9 +233,10 @@ export default function RobotManagementPage() {
 
             showSuccess("Robot deleted successfully");
 
-            // Close the modal BEFORE fetching updated data
+            // Close modal immediately after successful deletion
             setConfirmModal({ isOpen: false, robotId: null, robotName: "" });
 
+            // Refresh the robot list
             if (robots.length === 1 && currentPage > 1) {
                 fetchRobots(false, currentPage - 1);
             } else {
@@ -268,7 +272,7 @@ export default function RobotManagementPage() {
                         onClick={() =>
                             setModalState({ isOpen: true, robot: null })
                         }
-                        className="px-5 py-2.5 rounded-lg bg-cyan-500 text-white font-medium hover:bg-cyan-600 transition-colors"
+                        className="px-5 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
                     >
                         Add Robot
                     </button>
@@ -311,7 +315,7 @@ export default function RobotManagementPage() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {robots.map((robot: any) => (
+                        {robots.map((robot) => (
                             <RobotCard
                                 key={robot.id}
                                 robot={robot}

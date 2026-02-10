@@ -2,7 +2,7 @@
 
 import { Robot } from "../../../types/robot";
 import ArmCalibration from "./armCalibrate";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface RobotCardProps {
     robot: Robot;
@@ -11,8 +11,6 @@ interface RobotCardProps {
     onViewDetails: (robot: Robot) => void;
     onDelete: (id: number) => Promise<void>;
     togglingId?: number | null;
-    wsUrl?: string; // Full WebSocket URL (optional, overrides wsHost + robo_id)
-    wsHost?: string; // WebSocket host address (e.g., "ws://192.168.1.100:8002")
 }
 
 export function RobotCard({
@@ -22,85 +20,108 @@ export function RobotCard({
     onViewDetails,
     onDelete,
     togglingId,
-    wsUrl,
-    wsHost = "ws://192.168.1.100:8002", // Default WS Host
 }: RobotCardProps) {
     const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
     const [localToggling, setLocalToggling] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [showIP, setShowIP] = useState(false);
     const [localRobot, setLocalRobot] = useState<Robot>(robot);
-    const [ws, setWs] = useState<WebSocket | null>(null);
+    const [wsConnected, setWsConnected] = useState(false);
 
-    /* ================= WEBSOCKET SETUP ================= */
-
-    useEffect(() => {
-        const connectWebSocket = () => {
-            try {
-                // Build WebSocket URL dynamically if not provided
-                const finalWsUrl = wsUrl || `${wsHost}/ws/robot_message/${robot.robo_id}/`;
-                
-                console.log(`Connecting to WebSocket: ${finalWsUrl}`);
-                const websocket = new WebSocket(finalWsUrl);
-
-                websocket.onopen = () => {
-                    console.log(`WebSocket connected for robot ${robot.robo_id}`);
-                    setWs(websocket);
-                };
-
-                websocket.onmessage = (event) => {
-                    try {
-                        const message = JSON.parse(event.data);
-                        
-                        // Listen for robot active status events
-                        if (message.event === "robot_active_status" && message.data) {
-                            const { status } = message.data;
-                            
-                            // Update local robot state with new active status
-                            setLocalRobot((prevRobot) => ({
-                                ...prevRobot,
-                                is_active: status === true || status === "true" || status === 1,
-                            }));
-                            
-                            // Stop toggling animation
-                            setLocalToggling(false);
-                            setShowDeactivateConfirm(false);
-                            
-                            console.log(`Robot ${robot.robo_id} status updated: ${status}`);
-                        }
-                    } catch (error) {
-                        console.error("Error parsing WebSocket message:", error);
-                    }
-                };
-
-                websocket.onerror = (error) => {
-                    console.error(`WebSocket error for robot ${robot.robo_id}:`, error);
-                };
-
-                websocket.onclose = () => {
-                    console.log(`WebSocket disconnected for robot ${robot.robo_id}`);
-                    setWs(null);
-                    // Attempt to reconnect after 3 seconds
-                    setTimeout(connectWebSocket, 3000);
-                };
-            } catch (error) {
-                console.error(`Failed to connect WebSocket for robot ${robot.robo_id}:`, error);
-            }
-        };
-
-        connectWebSocket();
-
-        return () => {
-            if (ws) {
-                ws.close();
-            }
-        };
-    }, [wsUrl, wsHost, robot.robo_id]); // Include robot.robo_id in dependencies
+    const wsRef = useRef<WebSocket | null>(null);
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Update local robot when prop changes
     useEffect(() => {
         setLocalRobot(robot);
     }, [robot]);
+
+    // WebSocket connection for real-time status updates
+    useEffect(() => {
+        const connectWebSocket = () => {
+            try {
+                // Create WebSocket connection using robot's robo_id
+                const ws = new WebSocket(
+                    `ws://192.168.1.100:8002/ws/robot_message/${robot.robo_id}/`,
+                );
+
+                ws.onopen = () => {
+                    console.log(
+                        `✅ WebSocket connected for robot ${robot.robo_id}`,
+                    );
+                    setWsConnected(true);
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+
+                        // Handle robot_active_status event
+                        if (message.event === "robot_active_status") {
+                            const newStatus = message.data?.status;
+
+                            if (typeof newStatus === "boolean") {
+                                console.log(
+                                    `📡 Status update for ${robot.robo_id}: ${newStatus ? "ACTIVE" : "INACTIVE"}`,
+                                );
+
+                                // Update local robot state with new status (passive update)
+                                setLocalRobot((prev) => ({
+                                    ...prev,
+                                    is_active: newStatus,
+                                }));
+                            }
+                        }
+                    } catch (error) {
+                        console.error(
+                            "Failed to parse WebSocket message:",
+                            error,
+                        );
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error(
+                        `❌ WebSocket error for robot ${robot.robo_id}:`,
+                        error,
+                    );
+                    setWsConnected(false);
+                };
+
+                ws.onclose = () => {
+                    console.log(
+                        `🔌 WebSocket disconnected for robot ${robot.robo_id}`,
+                    );
+                    setWsConnected(false);
+
+                    // Attempt to reconnect after 5 seconds
+                    reconnectTimeoutRef.current = setTimeout(() => {
+                        console.log(
+                            `🔄 Attempting to reconnect for robot ${robot.robo_id}...`,
+                        );
+                        connectWebSocket();
+                    }, 5000);
+                };
+
+                wsRef.current = ws;
+            } catch (error) {
+                console.error("Failed to create WebSocket connection:", error);
+            }
+        };
+
+        // Initial connection
+        connectWebSocket();
+
+        // Cleanup on unmount
+        return () => {
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
+            if (wsRef.current) {
+                wsRef.current.close();
+            }
+        };
+    }, [robot.robo_id]); // Reconnect if robot ID changes
 
     /* ================= STATUS HELPERS ================= */
 
@@ -110,6 +131,11 @@ export function RobotCard({
                 bg: "bg-emerald-50",
                 border: "border-emerald-200",
                 text: "text-emerald-700",
+            },
+            available: {
+                bg: "bg-blue-50",
+                border: "border-blue-200",
+                text: "text-blue-700",
             },
             idle: {
                 bg: "bg-blue-50",
@@ -146,7 +172,7 @@ export function RobotCard({
         return new Date(date).toLocaleDateString();
     };
 
-    const isToggling = localToggling;
+    const isToggling = localToggling || togglingId === localRobot.id;
 
     // Battery color helpers
     const getBatteryStyles = (level: number) => {
@@ -162,7 +188,11 @@ export function RobotCard({
                 text: "text-amber-700",
                 border: "border-amber-200",
             };
-        return { bg: "bg-red-50", text: "text-red-700", border: "border-red-200" };
+        return {
+            bg: "bg-red-50",
+            text: "text-red-700",
+            border: "border-red-200",
+        };
     };
 
     // IP masking helper
@@ -174,9 +204,14 @@ export function RobotCard({
     };
 
     const statusStyles = getStatusStyles(localRobot.status);
-    const batteryStyles = localRobot.battery_level !== undefined 
-        ? getBatteryStyles(localRobot.battery_level)
-        : { bg: "bg-gray-50", text: "text-gray-600", border: "border-gray-200" };
+    const batteryStyles =
+        localRobot.battery_level !== undefined
+            ? getBatteryStyles(localRobot.battery_level)
+            : {
+                  bg: "bg-gray-50",
+                  text: "text-gray-600",
+                  border: "border-gray-200",
+              };
 
     /* ================= TOGGLE ================= */
 
@@ -191,12 +226,23 @@ export function RobotCard({
 
     const toggleRobot = async () => {
         if (localToggling) return;
+
         setLocalToggling(true);
+
         try {
             await onToggleActive(localRobot.id, localRobot.is_active);
-            // WebSocket will handle the status update via robot_active_status event
+
+            // Optimistically update the local state
+            setLocalRobot((prev) => ({
+                ...prev,
+                is_active: !prev.is_active,
+            }));
+        } catch (error) {
+            console.error(`Failed to toggle robot ${robot.robo_id}:`, error);
+            alert("Failed to update robot status. Please try again.");
         } finally {
-            // Don't reset here - let WebSocket event handle it
+            setLocalToggling(false);
+            setShowDeactivateConfirm(false);
         }
     };
 
@@ -204,13 +250,36 @@ export function RobotCard({
 
     const handleDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        await onDelete(localRobot.id);
+
+        try {
+            await onDelete(localRobot.id);
+        } catch (error) {
+            console.error(`Failed to delete robot ${robot.robo_id}:`, error);
+            alert("Failed to delete robot. Please try again.");
+        }
     };
 
     return (
         <div className="group relative h-full">
             {/* MAIN CARD */}
             <div className="relative h-full rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden">
+                {/* WebSocket Connection Indicator */}
+                <div className="absolute top-4 right-4 z-10">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white shadow-sm border border-gray-200">
+                        <div
+                            className={`w-2.5 h-2.5 rounded-full ${wsConnected ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`}
+                            title={
+                                wsConnected
+                                    ? "WebSocket Connected"
+                                    : "WebSocket Disconnected"
+                            }
+                        />
+                        <span className={`text-xs font-medium ${wsConnected ? "text-emerald-700" : "text-red-700"}`}>
+                            {wsConnected ? "Synced" : "Unsynced"}
+                        </span>
+                    </div>
+                </div>
+
                 {/* MAIN CONTENT */}
                 <div className="p-6">
                     {/* HEADER */}
@@ -225,11 +294,13 @@ export function RobotCard({
                                 </span>
                             </div>
                         </div>
-                        <div
+                        {/* Status Badge - Uncomment if needed */}
+                        {/* <div
                             className={`px-3 py-1 rounded-full text-xs font-medium border ${statusStyles.border} ${statusStyles.bg} ${statusStyles.text}`}
                         >
-                            {localRobot.status.charAt(0).toUpperCase() + localRobot.status.slice(1)}
-                        </div>
+                            {localRobot.status.charAt(0).toUpperCase() +
+                                localRobot.status.slice(1)}
+                        </div> */}
                     </div>
 
                     {/* STATS GRID */}
@@ -237,7 +308,9 @@ export function RobotCard({
                         {/* Battery */}
                         {localRobot.battery_level !== undefined && (
                             <div>
-                                <div className="text-xs text-gray-500 mb-1">Battery</div>
+                                <div className="text-xs text-gray-500 mb-1">
+                                    Battery
+                                </div>
                                 <div className="text-lg font-semibold text-gray-900">
                                     {localRobot.battery_level}%
                                 </div>
@@ -247,7 +320,9 @@ export function RobotCard({
                         {/* Location */}
                         {localRobot.location && (
                             <div>
-                                <div className="text-xs text-gray-500 mb-1">Location</div>
+                                <div className="text-xs text-gray-500 mb-1">
+                                    Location
+                                </div>
                                 <div className="text-sm font-medium text-gray-700 truncate">
                                     {localRobot.location}
                                 </div>
@@ -256,7 +331,9 @@ export function RobotCard({
 
                         {/* IP Address */}
                         <div>
-                            <div className="text-xs text-gray-500 mb-1">Local IP</div>
+                            <div className="text-xs text-gray-500 mb-1">
+                                Local IP
+                            </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-sm font-mono font-medium text-gray-700 truncate flex-1">
                                     {showIP
@@ -272,13 +349,38 @@ export function RobotCard({
                                     title={showIP ? "Hide IP" : "Show IP"}
                                 >
                                     {showIP ? (
-                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                        <svg
+                                            className="h-5 w-5"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                                            />
                                         </svg>
                                     ) : (
-                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        <svg
+                                            className="h-5 w-5"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                                            />
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                                            />
                                         </svg>
                                     )}
                                 </button>
@@ -287,7 +389,9 @@ export function RobotCard({
 
                         {/* Last Active */}
                         <div>
-                            <div className="text-xs text-gray-500 mb-1">Last Active</div>
+                            <div className="text-xs text-gray-500 mb-1">
+                                Last Active
+                            </div>
                             <div className="text-sm font-medium text-gray-700">
                                 {formatDate(localRobot.last_seen)}
                             </div>
@@ -298,13 +402,17 @@ export function RobotCard({
                     {localRobot.battery_level !== undefined && (
                         <div className="mb-4">
                             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                                <div 
+                                <div
                                     className={`h-full rounded-full transition-all ${
-                                        localRobot.battery_level > 60 ? 'bg-emerald-500' : 
-                                        localRobot.battery_level > 30 ? 'bg-amber-500' : 
-                                        'bg-red-500'
+                                        localRobot.battery_level > 60
+                                            ? "bg-emerald-500"
+                                            : localRobot.battery_level > 30
+                                              ? "bg-amber-500"
+                                              : "bg-red-500"
                                     }`}
-                                    style={{ width: `${localRobot.battery_level}%` }}
+                                    style={{
+                                        width: `${Math.min(100, Math.max(0, localRobot.battery_level))}%`,
+                                    }}
                                 />
                             </div>
                         </div>
@@ -420,7 +528,7 @@ export function RobotCard({
 
                     <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-200">
                         {/* MODAL HEADER */}
-                        <div className="p-6 bg-amber-50 border-b border-amber-100">
+                        <div className="p-6 border-b border-amber-100">
                             <h3 className="text-xl font-bold text-gray-900">
                                 Deactivate Robot?
                             </h3>
@@ -429,31 +537,21 @@ export function RobotCard({
                         {/* MODAL BODY */}
                         <div className="p-6">
                             <div className="mb-6">
-                                <p className="text-gray-700 mb-4 font-medium">
-                                    You're about to deactivate{" "}
-                                    <strong className="text-gray-900 font-bold">
+                                <p className="text-red-700 mb-4 font-medium">
+                                    <strong className="text-red-700 font-bold">
                                         {localRobot.name}
                                     </strong>
-                                    . This will immediately stop all ongoing
-                                    inspections and monitoring.
+                                    {" "}Deactivation is not allowed while the robot
+                                    is online. Please try again later.
                                 </p>
-
-                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                                    <p className="font-bold text-amber-900 mb-2 text-sm">
-                                        Important Notes:
-                                    </p>
-                                    <ul className="space-y-1.5 text-sm text-amber-800">
-                                        <li>• Ongoing inspections will be paused</li>
-                                        <li>• Real-time data collection will stop</li>
-                                        <li>• Robot will appear as offline</li>
-                                    </ul>
-                                </div>
                             </div>
 
                             {/* ACTION BUTTONS */}
                             <div className="flex gap-3">
                                 <button
-                                    onClick={() => setShowDeactivateConfirm(false)}
+                                    onClick={() =>
+                                        setShowDeactivateConfirm(false)
+                                    }
                                     className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg 
                                         hover:bg-gray-50 transition-all duration-200 font-semibold
                                         disabled:opacity-50 disabled:cursor-not-allowed"
@@ -486,7 +584,8 @@ export function RobotCard({
                             </div>
 
                             <p className="text-xs text-gray-500 text-center mt-4">
-                                You can reactivate the robot anytime from this dashboard
+                                You can reactivate the robot anytime from this
+                                dashboard
                             </p>
                         </div>
                     </div>

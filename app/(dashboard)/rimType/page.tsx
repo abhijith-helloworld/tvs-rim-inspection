@@ -183,9 +183,9 @@ export default function RimTypePage() {
 
                 {/* Stats Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                    <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm">
+                    <div className="bg-blue-50 rounded-xl p-5 border border-gray-200 shadow-sm">
                         <div className="flex items-center justify-between">
-                            <div>
+                            <div >
                                 <p className="text-sm text-gray-500">
                                     Total Rims
                                 </p>
@@ -193,7 +193,7 @@ export default function RimTypePage() {
                                     {rimTypes.length}
                                 </p>
                             </div>
-                            <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-lg flex items-center justify-center">
                                 <svg
                                     className="w-6 h-6 text-blue-600"
                                     fill="none"
@@ -211,7 +211,7 @@ export default function RimTypePage() {
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm">
+                    <div className="bg-green-50 rounded-xl p-5 border border-gray-200 shadow-sm">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500">Active</p>
@@ -223,7 +223,7 @@ export default function RimTypePage() {
                                     }
                                 </p>
                             </div>
-                            <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-lg flex items-center justify-center">
                                 <svg
                                     className="w-6 h-6 text-green-600"
                                     fill="none"
@@ -241,7 +241,7 @@ export default function RimTypePage() {
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm">
+                    <div className="bg-purple-50 rounded-xl p-5 border border-gray-200 shadow-sm">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500">
@@ -251,7 +251,7 @@ export default function RimTypePage() {
                                     Today
                                 </p>
                             </div>
-                            <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-lg  flex items-center justify-center">
                                 <svg
                                     className="w-6 h-6 text-purple-600"
                                     fill="none"
@@ -269,7 +269,7 @@ export default function RimTypePage() {
                         </div>
                     </div>
 
-                    <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm">
+                    <div className="bg-amber-50 rounded-xl p-5 border border-gray-200 shadow-sm">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500">
@@ -282,7 +282,7 @@ export default function RimTypePage() {
                                     }
                                 </p>
                             </div>
-                            <div className="w-12 h-12 rounded-lg bg-amber-100 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-lg flex items-center justify-center">
                                 <svg
                                     className="w-6 h-6 text-amber-600"
                                     fill="none"

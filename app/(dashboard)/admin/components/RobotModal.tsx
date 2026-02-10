@@ -6,7 +6,12 @@ interface RobotModalProps {
   isOpen: boolean;
   onClose: () => void;
   robot: Robot | null;
-  onSubmit: (data: { robo_id: string; name: string; local_ip: string }) => Promise<void>;
+  onSubmit: (data: { 
+    robo_id: string; 
+    name: string; 
+    local_ip: string;
+    minimum_battery_charge: number;
+  }) => Promise<void>;
   saving: boolean;
 }
 
@@ -15,18 +20,21 @@ export function RobotModal({ isOpen, onClose, robot, onSubmit, saving }: RobotMo
     robo_id: "",
     name: "",
     local_ip: "",
+    minimum_battery_charge: 20,
   });
 
   const [errors, setErrors] = useState({
     robo_id: "",
     name: "",
     local_ip: "",
+    minimum_battery_charge: "",
   });
 
   const [touched, setTouched] = useState({
     robo_id: false,
     name: false,
     local_ip: false,
+    minimum_battery_charge: false,
   });
 
   useEffect(() => {
@@ -35,31 +43,39 @@ export function RobotModal({ isOpen, onClose, robot, onSubmit, saving }: RobotMo
         robo_id: robot.robo_id,
         name: robot.name,
         local_ip: robot.local_ip || "",
+        minimum_battery_charge: robot.minimum_battery_charge || 20,
       });
     } else if (isOpen) {
-      setForm({ robo_id: "", name: "", local_ip: "" });
+      setForm({ robo_id: "", name: "", local_ip: "", minimum_battery_charge: 20 });
     }
-    setErrors({ robo_id: "", name: "", local_ip: "" });
-    setTouched({ robo_id: false, name: false, local_ip: false });
+    setErrors({ robo_id: "", name: "", local_ip: "", minimum_battery_charge: "" });
+    setTouched({ robo_id: false, name: false, local_ip: false, minimum_battery_charge: false });
   }, [robot, isOpen]);
 
-  const validateField = (name: keyof typeof form, value: string) => {
+  const validateField = (name: keyof typeof form, value: string | number) => {
     switch (name) {
       case "robo_id":
-        if (!value.trim()) return "Robot ID is required";
-        if (value.length < 3) return "Robot ID must be at least 3 characters";
-        if (!/^[a-zA-Z0-9-_]+$/.test(value)) return "Only letters, numbers, hyphens and underscores allowed";
+        if (!String(value).trim()) return "Robot ID is required";
+        if (String(value).length < 3) return "Robot ID must be at least 3 characters";
+        if (!/^[a-zA-Z0-9-_]+$/.test(String(value))) return "Only letters, numbers, hyphens and underscores allowed";
         return "";
       
       case "name":
-        if (!value.trim()) return "Robot name is required";
-        if (value.length < 2) return "Name must be at least 2 characters";
+        if (!String(value).trim()) return "Robot name is required";
+        if (String(value).length < 2) return "Name must be at least 2 characters";
         return "";
       
       case "local_ip":
-        if (value.trim() && !/^(\d{1,3}\.){3}\d{1,3}$/.test(value)) {
+        if (String(value).trim() && !/^(\d{1,3}\.){3}\d{1,3}$/.test(String(value))) {
           return "Please enter a valid IP address (e.g., 192.168.1.100)";
         }
+        return "";
+      
+      case "minimum_battery_charge":
+        const numValue = Number(value);
+        if (isNaN(numValue)) return "Must be a valid number";
+        if (numValue < 0) return "Cannot be negative";
+        if (numValue > 100) return "Cannot exceed 100%";
         return "";
       
       default:
@@ -73,7 +89,7 @@ export function RobotModal({ isOpen, onClose, robot, onSubmit, saving }: RobotMo
     setErrors(prev => ({ ...prev, [field]: error }));
   };
 
-  const handleChange = (field: keyof typeof form, value: string) => {
+  const handleChange = (field: keyof typeof form, value: string | number) => {
     setForm(prev => ({ ...prev, [field]: value }));
     
     if (errors[field]) {
@@ -87,6 +103,7 @@ export function RobotModal({ isOpen, onClose, robot, onSubmit, saving }: RobotMo
       robo_id: validateField("robo_id", form.robo_id),
       name: validateField("name", form.name),
       local_ip: validateField("local_ip", form.local_ip),
+      minimum_battery_charge: validateField("minimum_battery_charge", form.minimum_battery_charge),
     };
     
     setErrors(newErrors);
@@ -94,9 +111,10 @@ export function RobotModal({ isOpen, onClose, robot, onSubmit, saving }: RobotMo
       robo_id: true,
       name: true,
       local_ip: true,
+      minimum_battery_charge: true,
     });
 
-    return !newErrors.robo_id && !newErrors.name && !newErrors.local_ip;
+    return !newErrors.robo_id && !newErrors.name && !newErrors.local_ip && !newErrors.minimum_battery_charge;
   };
 
   const handleSubmit = async () => {
@@ -244,6 +262,41 @@ export function RobotModal({ isOpen, onClose, robot, onSubmit, saving }: RobotMo
                   Leave empty for automatic DHCP assignment. Manual IP must follow XXX.XXX.XXX.XXX format.
                 </p>
               </div>
+            )}
+          </div>
+
+          {/* Minimum Battery Charge */}
+          <div className="space-y-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Minimum Battery Charge (%) *
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={form.minimum_battery_charge}
+                onChange={(e) => handleChange("minimum_battery_charge", Number(e.target.value))}
+                onBlur={() => handleBlur("minimum_battery_charge")}
+                className={`w-full px-4 py-3 rounded-lg border text-sm transition-colors ${
+                  errors.minimum_battery_charge && touched.minimum_battery_charge
+                    ? "border-red-300 bg-red-50 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    : "border-gray-300 bg-white focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                }`}
+                placeholder="20"
+                disabled={saving}
+              />
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-medium">
+                %
+              </div>
+            </div>
+            {errors.minimum_battery_charge && touched.minimum_battery_charge ? (
+              <p className="text-sm text-red-600">{errors.minimum_battery_charge}</p>
+            ) : (
+              <p className="text-xs text-gray-500">
+                Robot will return to charging station when battery falls below this level
+              </p>
             )}
           </div>
         </div>
