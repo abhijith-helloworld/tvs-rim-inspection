@@ -66,7 +66,7 @@ export function RobotCard({
                                 );
 
                                 // Update local robot state with new status (passive update)
-                                setLocalRobot((prev) => ({
+                                setLocalRobot((prev:any) => ({
                                     ...prev,
                                     is_active: newStatus,
                                 }));
@@ -233,7 +233,7 @@ export function RobotCard({
             await onToggleActive(localRobot.id, localRobot.is_active);
 
             // Optimistically update the local state
-            setLocalRobot((prev) => ({
+            setLocalRobot((prev:any) => ({
                 ...prev,
                 is_active: !prev.is_active,
             }));
