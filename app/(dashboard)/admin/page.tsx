@@ -133,8 +133,8 @@ export default function RobotManagementPage() {
 
         const newStatus = !currentStatus;
 
-        setRobots((prev) =>
-            prev.map((r) =>
+        setRobots((prev:any) =>
+            prev.map((r:any) =>
                 r.id === id ? { ...r, is_active: newStatus } : r,
             ),
         );
@@ -162,8 +162,8 @@ export default function RobotManagementPage() {
         } catch (error) {
             console.error("Toggle error:", error);
 
-            setRobots((prev) =>
-                prev.map((r) =>
+            setRobots((prev:any) =>
+                prev.map((r:any) =>
                     r.id === id ? { ...r, is_active: currentStatus } : r,
                 ),
             );
