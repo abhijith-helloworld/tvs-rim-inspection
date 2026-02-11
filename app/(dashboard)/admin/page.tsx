@@ -160,7 +160,6 @@ export default function RobotManagementPage() {
                 `Robot ${currentStatus ? "deactivated" : "activated"} successfully`,
             );
         } catch (error) {
-            console.error("Toggle error:", error);
 
             setRobots((prev:any) =>
                 prev.map((r:any) =>

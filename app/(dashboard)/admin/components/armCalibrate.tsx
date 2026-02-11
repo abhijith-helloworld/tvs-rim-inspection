@@ -150,11 +150,9 @@ export default function ArmCalibration({
             ? `ws://192.168.1.100:8002/ws/robot_message/${roboId}/profile/`
             : `ws://192.168.1.100:8002/ws/robot_message/${roboId}/profile/`;
 
-        console.log("Connecting to WebSocket:", wsUrl);
         const websocket = new WebSocket(wsUrl);
 
         websocket.onopen = () => {
-            console.log("WebSocket connected");
             setWsConnected(true);
 
             if (selectedProfileId) {
@@ -164,7 +162,6 @@ export default function ArmCalibration({
                         profile_id: selectedProfileId,
                     },
                 };
-                console.log("Sending profile_clicked event:", message);
                 websocket.send(JSON.stringify(message));
             }
         };
@@ -172,7 +169,6 @@ export default function ArmCalibration({
         websocket.onmessage = (event) => {
             try {
                 const data: WebSocketMessage = JSON.parse(event.data);
-                console.log("WebSocket message received:", data);
 
                 if (
                     data.type === "hand_toggle" &&
@@ -266,23 +262,19 @@ export default function ArmCalibration({
 
                 // Handle ready_for_data_collection event
                 if ((data as any).event === "ready_for_data_collection") {
-                    console.log("Ready for data collection - hands now clickable");
                     setHandsReady(true);
                     setWsMessage("Ready for data collection - You can now select a hand");
                     setTimeout(() => setWsMessage(null), 3000);
                 }
             } catch (err) {
-                console.error("Error parsing WebSocket message:", err);
             }
         };
 
         websocket.onerror = (error) => {
-            console.error("WebSocket error:", error);
             setWsConnected(false);
         };
 
         websocket.onclose = () => {
-            console.log("WebSocket disconnected");
             setWsConnected(false);
         };
 
@@ -340,7 +332,6 @@ export default function ArmCalibration({
     }, []);
 
     const handleApiError = (error: unknown, context: string) => {
-        console.error(`${context}:`, error);
         const message =
             error instanceof Error
                 ? error.message
@@ -822,24 +813,6 @@ export default function ArmCalibration({
         }
     };
 
-    const selectAllPoints = (hand: Hand) => {
-        if (!hands[hand]) {
-            setError(`${hand} hand must be enabled first`);
-            return;
-        }
-
-        setSelectedPoints((prev) => ({
-            ...prev,
-            [hand]: new Set(POINTS),
-        }));
-    };
-
-    const deselectAllPoints = (hand: Hand) => {
-        setSelectedPoints((prev) => ({
-            ...prev,
-            [hand]: new Set(),
-        }));
-    };
 
     const closeTestModal = () => {
         setShowTestModal(false);

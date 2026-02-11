@@ -55,7 +55,6 @@ export default function UsersTable({
     const [activeDropdown, setActiveDropdown] = React.useState<number | null>(null);
     const [selectedRobotIds, setSelectedRobotIds] = React.useState<string[]>([]);
 
-    // Function to determine avatar based on user ID (even = male, odd = female)
     const getAvatar = (userId: number) => {
         return userId % 2 === 0 ? Male : Female;
     };
@@ -155,8 +154,6 @@ export default function UsersTable({
                     }),
                 },
             );
-
-            // Refresh current page data
             const res = await fetchWithAuth(`${API_BASE_URL}/accounts/users/?page=${currentPage}`);
             const json = await res.json();
 
@@ -216,7 +213,7 @@ export default function UsersTable({
     return (
         <div className="bg-white rounded-lg overflow-hidden">
             <div className="overflow-hidden flex flex-col">
-                <div className="h-[600px] overflow-auto">
+                <div className="h-auto overflow-auto">
                     <table className="min-w-full table-fixed">
                         <colgroup>
                             <col className="w-[25%]" />

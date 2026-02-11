@@ -435,14 +435,12 @@ const Dashboard: React.FC = () => {
                 }
 
                 const result = await response.json();
-                console.log("📊 Robot data response:", result);
 
                 const robotData: RobotData = result.data;
                 setRobotData(robotData);
 
                 if (robotData.robo_id) {
                     setRoboId(robotData.robo_id);
-                    console.log("✅ Robot ID set:", robotData.robo_id);
                 }
 
                 setError(null);
@@ -480,7 +478,6 @@ const Dashboard: React.FC = () => {
                 }
 
                 const result = await response.json();
-                console.log("📊 Filtered data:", result);
 
                 if (result.schedule_summary) {
                     setData((prev) => ({
@@ -583,7 +580,6 @@ const Dashboard: React.FC = () => {
 
         try {
             wsRef.current.send(JSON.stringify(message));
-            console.log("✅ Location click sent:", message);
         } catch (err) {
             console.error("❌ Failed to send location click:", err);
         }
@@ -621,7 +617,6 @@ const Dashboard: React.FC = () => {
                 throw new Error(`PATCH failed: ${response.status}`);
             }
 
-            console.log("✅ Navigation updated:", payload);
         } catch (err) {
             console.error("❌ Navigation PATCH error:", err);
             setNavPatchError("Failed to update navigation");
@@ -670,7 +665,6 @@ const Dashboard: React.FC = () => {
             return;
         }
 
-        console.log(`🚀 Initializing WebSocket for robo_id: ${roboId}`);
 
         let ws: WebSocket | null = null;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -679,22 +673,17 @@ const Dashboard: React.FC = () => {
         const connect = () => {
             try {
                 const wsUrl = `ws://192.168.1.100:8002/ws/robot_message/${roboId}/`;
-                console.log(`🔗 Attempting WebSocket connection to: ${wsUrl}`);
 
                 ws = new WebSocket(wsUrl);
                 wsRef.current = ws;
 
                 ws.onopen = () => {
-                    console.log(
-                        `✅ WebSocket connected for robo_id: ${roboId}`,
-                    );
                     setWsConnected(true);
                 };
 
                 ws.onmessage = (event) => {
                     try {
                         const payload = JSON.parse(event.data);
-                        console.log("📩 WebSocket event:", payload.event);
 
                         /* ================= ROBOT STATUS ================= */
                         if (payload.event === "robot_status") {
@@ -727,7 +716,7 @@ const Dashboard: React.FC = () => {
                                         prev.canStatus.can1,
                                 },
                             }));
-                            console.log("🔌 CAN Status updated:", payload.data);
+                            ("🔌 CAN Status updated:", payload.data);
                         }
 
                         /* ================= CAMERA STATUS ================= */
@@ -820,16 +809,6 @@ const Dashboard: React.FC = () => {
                             setIsAutonomousReady(ready);
                             setIsModeActive(modeActive);
 
-                            console.log(
-                                "🤖 Autonomous Ready:",
-                                ready,
-                                "| Mode Active:",
-                                modeActive,
-                                "| Strict/Strict Auto is now",
-                                modeActive
-                                    ? "enabled (user can click)"
-                                    : "disabled (waiting for activation)",
-                            );
                         }
                     } catch (err) {
                         console.error("❌ WebSocket message parse error:", err);
@@ -840,18 +819,11 @@ const Dashboard: React.FC = () => {
                     console.error("❌ WebSocket error:", err);
                 };
 
-                ws.onclose = (event) => {
-                    console.log(
-                        `🔌 WebSocket closed for robo_id: ${roboId}`,
-                        event.code,
-                        event.reason,
-                    );
-
+                ws.onclose = () => {
                     setWsConnected(false);
                     wsRef.current = null;
 
                     if (!isManualClose) {
-                        console.log("🔄 Reconnecting in 3 seconds...");
                         reconnectTimeout = setTimeout(connect, 3000);
                     }
                 };

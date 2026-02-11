@@ -98,14 +98,12 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
         const roboId = robot.robo_id;
 
-        console.log("Connecting WebSocket with robo_id:", roboId);
 
         const ws = new WebSocket(
             `ws://192.168.1.100:8002/ws/robot_message/${roboId}/`,
         );
 
         ws.onopen = () => {
-            console.log(`✅ WebSocket connected for robo_id: ${roboId}`);
             setWsConnected(true);
             setWsError(false);
         };
@@ -114,7 +112,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
             try {
                 const payload = JSON.parse(event.data);
 
-                console.log(`📩 WS Payload for ${roboId}:`, payload);
 
                 /* 🔋 Battery Update */
                 /* 🔋 Battery Update */
@@ -246,22 +243,18 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     }));
                 }
             } catch (err) {
-                console.error(`WS Parse Error for ${roboId}:`, err);
             }
         };
 
         ws.onerror = (err) => {
-            console.error(`WebSocket error for ${roboId}:`, err);
             setWsError(true);
         };
 
         ws.onclose = () => {
-            console.log(`❌ WebSocket disconnected for robo_id: ${roboId}`);
             setWsConnected(false);
         };
 
         return () => {
-            console.log(`Closing WebSocket for robo_id: ${roboId}`);
             ws.close();
         };
     }, [isOpen, robot?.robo_id, robot?.location]);

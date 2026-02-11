@@ -38,8 +38,6 @@ function DashboardContent() {
         const robotIdParam = searchParams.get("robot_id");
         const id = robotIdParam;
 
-        console.log("Dashboard - Robot ID from URL:", robotIdParam);
-        console.log("Dashboard - Using Robot ID:", id);
 
         setRobotId(id);
         setIsInitialized(true);
@@ -57,13 +55,11 @@ function DashboardContent() {
         const fetchStatusTotals = async () => {
             // CRITICAL: Don't fetch if robotId is not initialized
             if (!robotId || !isInitialized) {
-                console.log("Skipping fetch - robotId not ready:", robotId);
                 return;
             }
 
             try {
                 setLoading(true);
-                console.log("Fetching schedules for robot:", robotId);
 
                 const response = await fetchWithAuth(
                     `${API_BASE_URL}/robots/${robotId}/schedules/`,

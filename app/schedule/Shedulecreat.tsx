@@ -47,11 +47,6 @@ function ScheduleCreatePage() {
     useEffect(() => {
         // Priority: URL param > Route param > Default
         const id = robotIdFromUrl || robotIdFromParams || "1";
-
-        console.log("CreateSchedule - URL robot_id:", robotIdFromUrl);
-        console.log("CreateSchedule - Route robotId:", robotIdFromParams);
-        console.log("CreateSchedule - Using robotId:", id);
-
         if (!id || id === "undefined" || id === "null") {
             console.error("CreateSchedule - Invalid robotId, redirecting...");
             router.push("/dashboard?robot_id=1");
@@ -73,14 +68,11 @@ function ScheduleCreatePage() {
     useEffect(() => {
         const fetchRobotInfo = async () => {
             if (!robotId || !isInitialized) {
-                console.log("Skipping robot fetch - not initialized");
                 return;
             }
 
             try {
                 setIsLoadingRobot(true);
-                console.log("Fetching robot info for:", robotId);
-
                 const response = await fetchWithAuth(
                     `${API_BASE_URL}/robots/${robotId}/`,
                 );
@@ -91,7 +83,6 @@ function ScheduleCreatePage() {
 
                 const data = await response.json();
                 setRobotInfo(data.data || data);
-                console.log("Robot info loaded:", data);
             } catch (error) {
                 console.error("Error fetching robot info:", error);
                 toast.error("Failed to load robot information");
@@ -197,14 +188,6 @@ function ScheduleCreatePage() {
                 scheduled_time: formData.time,
                 end_time: formData.endTime,
             };
-
-            console.log("Creating schedule for robot:", robotId);
-            console.log(
-                "API URL:",
-                `${API_BASE_URL}/robots/${robotId}/schedule/create/`,
-            );
-            console.log("Payload:", payload);
-
             const response = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/schedule/create/`,
                 {
@@ -224,7 +207,6 @@ function ScheduleCreatePage() {
             }
 
             const responseData = await response.json();
-            console.log("Schedule created successfully:", responseData);
 
             toast.success(
                 <div className="flex items-center space-x-3">
@@ -300,10 +282,6 @@ function ScheduleCreatePage() {
                 scheduled_time: currentTime,
                 end_time: formData.endTime, // Use the existing endTime input
             };
-
-            console.log("Creating immediate schedule for robot:", robotId);
-            console.log("Payload:", payload);
-
             const response = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/schedule/create-immediately/`,
                 {

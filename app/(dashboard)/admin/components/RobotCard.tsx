@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Robot } from "../../../types/robot";
 import ArmCalibration from "./armCalibrate";
 import { useState, useEffect, useRef } from "react";
@@ -46,9 +47,6 @@ export function RobotCard({
                 );
 
                 ws.onopen = () => {
-                    console.log(
-                        `✅ WebSocket connected for robot ${robot.robo_id}`,
-                    );
                     setWsConnected(true);
                 };
 
@@ -61,22 +59,14 @@ export function RobotCard({
                             const newStatus = message.data?.status;
 
                             if (typeof newStatus === "boolean") {
-                                console.log(
-                                    `📡 Status update for ${robot.robo_id}: ${newStatus ? "ACTIVE" : "INACTIVE"}`,
-                                );
-
                                 // Update local robot state with new status (passive update)
-                                setLocalRobot((prev:any) => ({
+                                setLocalRobot((prev: any) => ({
                                     ...prev,
                                     is_active: newStatus,
                                 }));
                             }
                         }
                     } catch (error) {
-                        console.error(
-                            "Failed to parse WebSocket message:",
-                            error,
-                        );
                     }
                 };
 
@@ -89,16 +79,10 @@ export function RobotCard({
                 };
 
                 ws.onclose = () => {
-                    console.log(
-                        `🔌 WebSocket disconnected for robot ${robot.robo_id}`,
-                    );
                     setWsConnected(false);
-
                     // Attempt to reconnect after 5 seconds
                     reconnectTimeoutRef.current = setTimeout(() => {
-                        console.log(
-                            `🔄 Attempting to reconnect for robot ${robot.robo_id}...`,
-                        );
+
                         connectWebSocket();
                     }, 5000);
                 };
@@ -233,7 +217,7 @@ export function RobotCard({
             await onToggleActive(localRobot.id, localRobot.is_active);
 
             // Optimistically update the local state
-            setLocalRobot((prev:any) => ({
+            setLocalRobot((prev: any) => ({
                 ...prev,
                 is_active: !prev.is_active,
             }));
@@ -274,7 +258,9 @@ export function RobotCard({
                                     : "WebSocket Disconnected"
                             }
                         />
-                        <span className={`text-xs font-medium ${wsConnected ? "text-emerald-700" : "text-red-700"}`}>
+                        <span
+                            className={`text-xs font-medium ${wsConnected ? "text-emerald-700" : "text-red-700"}`}
+                        >
                             {wsConnected ? "Synced" : "Unsynced"}
                         </span>
                     </div>
@@ -487,24 +473,32 @@ export function RobotCard({
                     </div>
 
                     {/* Secondary Actions */}
-                    <div className="flex gap-2 mt-2">
+                    <div className="mt-4 grid grid-cols-2 gap-3">
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onEdit(localRobot);
                             }}
-                            className="flex-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                            className="w-full px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
                             disabled={isToggling}
                         >
                             Edit
                         </button>
+
                         <button
                             onClick={handleDelete}
-                            className="flex-1 px-4 py-2 rounded-lg border border-red-200 text-red-700 text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
+                            className="w-full px-4 py-2 rounded-lg border border-red-200 text-red-700 text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
                             disabled={isToggling}
                         >
                             Delete
                         </button>
+
+                        <Link
+                            href={`/userDashboard/${robot.id}`}
+                            className="col-span-2 w-full text-center px-4 py-2 rounded-lg border border-green-200 text-green-700 text-sm font-medium hover:bg-green-50 transition-colors"
+                        >
+                            Go to Dashboard
+                        </Link>
                     </div>
                 </div>
             </div>
@@ -540,8 +534,8 @@ export function RobotCard({
                                 <p className="text-red-700 mb-4 font-medium">
                                     <strong className="text-red-700 font-bold">
                                         {localRobot.name}
-                                    </strong>
-                                    {" "}Deactivation is not allowed while the robot
+                                    </strong>{" "}
+                                    Deactivation is not allowed while the robot
                                     is online. Please try again later.
                                 </p>
                             </div>

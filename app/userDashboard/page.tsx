@@ -162,11 +162,9 @@ const Dashboard: React.FC = () => {
     const handleRobotClick = (robotId: number) => {
         // If clicking the same robot, navigate to detail page
         if (selectedRobotId === robotId) {
-            console.log("Navigating to robot detail", robotId);
             router.push(`/userDashboard/${robotId}`);
         } else {
             // Otherwise, select the robot and update inspection summary
-            console.log("Selected robot", robotId);
             setSelectedRobotId(robotId);
             
             const selectedRobot = robots.find(r => r.id === robotId);
@@ -228,7 +226,6 @@ const Dashboard: React.FC = () => {
         }
 
         const roboId = robot.robo_id;
-        console.log(`🚀 Initializing WebSocket for robo_id: ${roboId}`);
 
         // Close existing connection if any
         if (websocketsRef.current.has(roboId)) {
@@ -241,8 +238,6 @@ const Dashboard: React.FC = () => {
         const connect = () => {
             try {
                 const wsUrl = `ws://192.168.1.100:8002/ws/robot_message/${roboId}/`;
-                console.log(`🔗 Attempting WebSocket connection to: ${wsUrl}`);
-
                 const ws = new WebSocket(wsUrl);
                 websocketsRef.current.set(roboId, ws);
 
@@ -250,9 +245,6 @@ const Dashboard: React.FC = () => {
                 setWsStatus((prev) => new Map(prev).set(roboId, "connecting"));
 
                 ws.onopen = () => {
-                    console.log(
-                        `✅ WebSocket connected for robo_id: ${roboId}`,
-                    );
                     setWsStatus((prev) =>
                         new Map(prev).set(roboId, "connected"),
                     );
@@ -261,10 +253,6 @@ const Dashboard: React.FC = () => {
                 ws.onmessage = (event) => {
                     try {
                         const payload = JSON.parse(event.data);
-                        console.log(
-                            `📩 WebSocket event for ${roboId}:`,
-                            payload.event,
-                        );
 
                         // Handle battery_information event only
                         if (payload.event === "battery_information") {
@@ -321,20 +309,13 @@ const Dashboard: React.FC = () => {
                 };
 
                 ws.onclose = (event) => {
-                    console.log(
-                        `🔌 WebSocket closed for robo_id: ${roboId}`,
-                        event.code,
-                        event.reason,
-                    );
+
                     setWsStatus((prev) =>
                         new Map(prev).set(roboId, "disconnected"),
                     );
                     websocketsRef.current.delete(roboId);
 
                     if (!isManualClose) {
-                        console.log(
-                            `🔄 Reconnecting in 3 seconds for ${roboId}...`,
-                        );
                         reconnectTimeout = setTimeout(connect, 3000);
                     }
                 };

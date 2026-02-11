@@ -122,7 +122,6 @@ export function ScheduleCard({ schedule, onClick, onUpdate }: ScheduleCardProps)
             const result = await response.json();
             
             if (result.success) {
-                console.log("✅ Schedule canceled successfully");
                 onUpdate(); // Refresh the schedule list
             } else {
                 throw new Error(result.message || "Failed to cancel schedule");
@@ -299,7 +298,6 @@ function EditScheduleModal({ schedule, onClose, onUpdate }: EditScheduleModalPro
             const result = await response.json();
             
             if (result.success) {
-                console.log("✅ Schedule updated successfully");
                 onUpdate(); // Refresh the schedule list
                 onClose(); // Close modal
             } else {

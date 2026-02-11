@@ -36,7 +36,6 @@ export class RobotWebSocketManager {
 
     constructor(config: RobotWebSocketConfig) {
         this.config = config;
-        console.log("🔌 WebSocket Manager initialized for robot:", config.robotId);
     }
 
     /**
@@ -46,13 +45,11 @@ export class RobotWebSocketManager {
         return new Promise((resolve, reject) => {
             try {
                 const wsUrl = `${this.config.baseUrl}/ws/robot_message/${this.config.robotId}/`;
-                console.log("🔗 Connecting to WebSocket:", wsUrl);
 
                 this.ws = new WebSocket(wsUrl);
 
                 // Connection opened
                 this.ws.onopen = () => {
-                    console.log("✅ WebSocket connected for robot:", this.config.robotId);
                     this.reconnectAttempts = 0;
                     this.isManuallyDisconnected = false;
 
@@ -108,7 +105,6 @@ export class RobotWebSocketManager {
      * Disconnect from WebSocket
      */
     public disconnect(): void {
-        console.log("🔌 Disconnecting WebSocket");
         this.isManuallyDisconnected = true;
         this.stopHeartbeat();
 
@@ -124,7 +120,6 @@ export class RobotWebSocketManager {
     public send(message: WebSocketMessage): boolean {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             try {
-                console.log("📤 Sending WebSocket message:", message);
                 this.ws.send(JSON.stringify(message));
                 return true;
             } catch (error) {
@@ -151,27 +146,22 @@ export class RobotWebSocketManager {
     private handleMessage(data: string): void {
         try {
             const message: WebSocketMessage = JSON.parse(data);
-            console.log("📥 WebSocket message received:", message);
 
             // Route message to appropriate handler
             switch (message.type || message.event) {
                 case "schedule_updated":
-                    console.log("📅 Schedule updated event received!");
                     if (this.config.onScheduleUpdated) {
                         this.config.onScheduleUpdated();
                     }
                     break;
 
                 case "robot_status":
-                    console.log("🤖 Robot status update:", message.data);
                     break;
 
                 case "connection_established":
-                    console.log("🔗 Connection established message received");
                     break;
 
                 default:
-                    console.log("📨 Generic message:", message);
                     if (this.config.onMessage) {
                         this.config.onMessage(message);
                     }
@@ -188,7 +178,6 @@ export class RobotWebSocketManager {
         while (this.messageQueue.length > 0) {
             const message = this.messageQueue.shift();
             if (message) {
-                console.log("📤 Processing queued message:", message);
                 this.send(message);
             }
         }
@@ -207,11 +196,6 @@ export class RobotWebSocketManager {
 
         this.reconnectAttempts++;
         const delay = this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1);
-
-        console.log(
-            `⏳ Attempting reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms`
-        );
-
         setTimeout(() => {
             this.connect().catch((error) => {
                 console.error("❌ Reconnection failed:", error);
@@ -277,7 +261,6 @@ export function useRobotWebSocket(
             return;
         }
 
-        console.log("🎣 useRobotWebSocket hook initialized for robot:", robotId);
 
         // Initialize WebSocket manager
         wsManagerRef.current = new RobotWebSocketManager({
@@ -285,12 +268,10 @@ export function useRobotWebSocket(
             baseUrl,
             onScheduleUpdated,
             onConnected: () => {
-                console.log("✅ WebSocket connected");
                 setConnected(true);
                 setError(null);
             },
             onDisconnected: () => {
-                console.log("❌ WebSocket disconnected");
                 setConnected(false);
             },
             onError: (err) => {

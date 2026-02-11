@@ -117,13 +117,7 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
     /* ===================== STEP 2: Validate database robot ID ===================== */
     useEffect(() => {
-        console.log("🤖 SchedulesList - Validating Robot Database ID");
-        console.log("  - Received (robotIdProp):", robotIdProp);
-        console.log("  - Normalized (robotDbId):", robotDbId);
-
         const isValid = robotDbId && !isNaN(Number(robotDbId));
-        console.log("  - Is valid number?", isValid);
-
         if (!isValid) {
             console.error("❌ Invalid robotDbId:", robotDbId);
             setError(
@@ -132,8 +126,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
             setLoading(false);
             return;
         }
-
-        console.log("✅ robotDbId is valid:", robotDbId);
     }, [robotDbId, robotIdProp]);
 
     /* ===================== STEP 3: Fetch robot data to get robo_id ===================== */
@@ -146,7 +138,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
             try {
                 setLoading(true);
-                console.log(`📡 Fetching robot data for database ID: ${robotDbId}`);
 
                 const response = await fetchWithAuth(
                     `${API_BASE_URL}/robots/${robotDbId}/`
@@ -157,7 +148,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
                 }
 
                 const result = await response.json();
-                console.log("✅ Robot data received:", result);
 
                 if (!result.success) {
                     throw new Error(result.message || "Failed to fetch robot data");
@@ -166,15 +156,7 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
                 const robot = result.data as RobotData;
                 setRobotData(robot);
 
-                console.log("🔍 Extracting robo_id from robot data:", robot.robo_id);
                 setRoboId(robot.robo_id);
-
-                console.log("✅ Robot data setup complete:", {
-                    robotDbId,
-                    roboId: robot.robo_id,
-                    robotName: robot.name,
-                });
-
                 setError(null);
             } catch (err: any) {
                 console.error("❌ Error fetching robot:", err.message);
@@ -200,7 +182,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
         setError(null);
 
         try {
-            console.log(`📡 Fetching schedules for robot (DB ID): ${robotDbId}, page: ${currentPage}`);
 
             const filterBody = {
                 filter_type: "month",
@@ -208,9 +189,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
             };
 
             const url = `${API_BASE_URL}/schedule/robot/${robotDbId}/filter/?page=${currentPage}&page_size=${pageSize}`;
-
-            console.log("  - URL:", url);
-
             const response = await fetchWithAuth(url, {
                 method: "POST",
                 headers: {
@@ -228,8 +206,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
             }
 
             const result = await response.json();
-            console.log("✅ Schedules received:", result);
-
             if (!result.success) {
                 throw new Error(result.message || "Failed to fetch schedules");
             }
@@ -247,8 +223,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
             );
 
             setSchedules(sortedSchedules);
-            console.log(`  - Loaded ${sortedSchedules.length} schedules for page ${currentPage}`);
-
             if (result.pagination) {
                 setPagination(result.pagination);
             }
@@ -284,31 +258,24 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
             return;
         }
 
-        console.log("🔌 Setting up WebSocket with robo_id:", roboId);
 
         wsManagerRef.current = new RobotWebSocketManager({
             robotId: roboId,
             baseUrl: "ws://192.168.1.100:8002",
             onScheduleUpdated: () => {
-                console.log("📅 Schedule updated event received from WebSocket!");
-                console.log("⏳ Refreshing schedule data in 1 second...");
-
                 if (refreshTimeoutRef.current) {
                     clearTimeout(refreshTimeoutRef.current);
                 }
 
                 refreshTimeoutRef.current = setTimeout(() => {
-                    console.log("🔄 Executing refresh from WebSocket trigger");
                     fetchFilteredData();
                 }, 1000);
             },
             onConnected: () => {
-                console.log("✅ WebSocket connected (robo_id: " + roboId + ")");
                 setWsConnected(true);
                 setWsError(null);
             },
             onDisconnected: () => {
-                console.log("❌ WebSocket disconnected");
                 setWsConnected(false);
             },
             onError: (err) => {
@@ -323,7 +290,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
         });
 
         return () => {
-            console.log("🧹 Cleaning up WebSocket");
             if (wsManagerRef.current) {
                 wsManagerRef.current.disconnect();
             }
@@ -335,7 +301,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
     /* ===================== HANDLE PAGE CHANGE ===================== */
     const handlePageChange = (page: number) => {
-        console.log("📄 Page change requested:", { from: currentPage, to: page });
         if (page >= 1 && page <= pagination.total_pages) {
             setCurrentPage(page);
             window.scrollTo({ top: 0, behavior: "smooth" });
@@ -344,10 +309,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
     /* ===================== HANDLE SCHEDULE CLICK ===================== */
     const handleScheduleClick = (scheduleId: number) => {
-        console.log("📍 Navigating to inspection:", {
-            scheduleId,
-            robotDbId,
-        });
         router.push(
             `/inspections?schedule_id=${scheduleId}&robot_id=${robotDbId}`
         );
@@ -355,7 +316,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
     /* ===================== MANUAL REFRESH ===================== */
     const handleManualRefresh = () => {
-        console.log("🔄 Manual refresh triggered");
         fetchFilteredData();
     };
 
