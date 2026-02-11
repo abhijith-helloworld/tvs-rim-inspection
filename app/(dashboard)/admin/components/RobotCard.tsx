@@ -28,6 +28,7 @@ export function RobotCard({
     const [showIP, setShowIP] = useState(false);
     const [localRobot, setLocalRobot] = useState<Robot>(robot);
     const [wsConnected, setWsConnected] = useState(false);
+    const [isRobotOnline, setIsRobotOnline] = useState(false); // Track if robot is online
 
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -59,6 +60,9 @@ export function RobotCard({
                             const newStatus = message.data?.status;
 
                             if (typeof newStatus === "boolean") {
+                                // Update robot online status
+                                setIsRobotOnline(newStatus);
+
                                 // Update local robot state with new status (passive update)
                                 setLocalRobot((prev: any) => ({
                                     ...prev,
@@ -247,8 +251,26 @@ export function RobotCard({
         <div className="group relative h-full">
             {/* MAIN CARD */}
             <div className="relative h-full rounded-xl bg-white border border-gray-200 shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden">
-                {/* WebSocket Connection Indicator */}
-                <div className="absolute top-4 right-4 z-10">
+                {/* Top Right Indicators Container */}
+                <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+                    {/* Robot Online/Offline Indicator */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white shadow-sm border border-gray-200">
+                        <div
+                            className={`w-2.5 h-2.5 rounded-full ${isRobotOnline ? "bg-green-500 animate-pulse" : "bg-gray-400"}`}
+                            title={
+                                isRobotOnline
+                                    ? "Robot Online"
+                                    : "Robot Offline"
+                            }
+                        />
+                        <span
+                            className={`text-xs font-medium ${isRobotOnline ? "text-green-700" : "text-gray-600"}`}
+                        >
+                            {isRobotOnline ? "Online" : "Offline"}
+                        </span>
+                    </div>
+
+                    {/* WebSocket Connection Indicator */}
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white shadow-sm border border-gray-200">
                         <div
                             className={`w-2.5 h-2.5 rounded-full ${wsConnected ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`}
@@ -522,65 +544,114 @@ export function RobotCard({
 
                     <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-200">
                         {/* MODAL HEADER */}
-                        <div className="p-6 border-b border-amber-100">
+                        <div className={`p-6 border-b ${isRobotOnline ? 'border-red-100' : 'border-amber-100'}`}>
                             <h3 className="text-xl font-bold text-gray-900">
-                                Deactivate Robot?
+                                {isRobotOnline ? 'Cannot Deactivate Robot' : 'Deactivate Robot?'}
                             </h3>
                         </div>
 
                         {/* MODAL BODY */}
                         <div className="p-6">
                             <div className="mb-6">
-                                <p className="text-red-700 mb-4 font-medium">
-                                    <strong className="text-red-700 font-bold">
-                                        {localRobot.name}
-                                    </strong>{" "}
-                                    Deactivation is not allowed while the robot
-                                    is online. Please try again later.
-                                </p>
+                                {isRobotOnline ? (
+                                    // Robot is ONLINE - Show error message
+                                    <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                        <svg 
+                                            className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" 
+                                            fill="none" 
+                                            viewBox="0 0 24 24" 
+                                            stroke="currentColor"
+                                        >
+                                            <path 
+                                                strokeLinecap="round" 
+                                                strokeLinejoin="round" 
+                                                strokeWidth={2} 
+                                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" 
+                                            />
+                                        </svg>
+                                        <div>
+                                            <p className="text-red-800 font-semibold mb-2">
+                                                Robot is Currently Online
+                                            </p>
+                                            <p className="text-red-700 text-sm">
+                                                <strong className="font-bold">{localRobot.name}</strong> cannot be deactivated while it is online. 
+                                                Deactivation is only allowed when the robot is offline. Please wait for the robot to go offline and try again.
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    // Robot is OFFLINE - Show warning message
+                                    <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                        <svg 
+                                            className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" 
+                                            fill="none" 
+                                            viewBox="0 0 24 24" 
+                                            stroke="currentColor"
+                                        >
+                                            <path 
+                                                strokeLinecap="round" 
+                                                strokeLinejoin="round" 
+                                                strokeWidth={2} 
+                                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" 
+                                            />
+                                        </svg>
+                                        <div>
+                                            <p className="text-amber-800 font-semibold mb-2">
+                                                Warning: Deactivation Will Block Access
+                                            </p>
+                                            <p className="text-amber-700 text-sm">
+                                                Deactivating <strong className="font-bold">{localRobot.name}</strong> will block all robot access, 
+                                                including user listings and operations. This action will stop all active tasks and prevent the robot from receiving new assignments.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* ACTION BUTTONS */}
                             <div className="flex gap-3">
                                 <button
-                                    onClick={() =>
-                                        setShowDeactivateConfirm(false)
-                                    }
+                                    onClick={() => setShowDeactivateConfirm(false)}
                                     className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg 
                                         hover:bg-gray-50 transition-all duration-200 font-semibold
                                         disabled:opacity-50 disabled:cursor-not-allowed"
                                     disabled={isToggling}
                                 >
-                                    Cancel
+                                    {isRobotOnline ? 'Close' : 'Cancel'}
                                 </button>
-                                <button
-                                    onClick={toggleRobot}
-                                    disabled={isToggling}
-                                    className={`
-                                        flex-1 px-4 py-3 rounded-lg font-semibold transition-all duration-200
-                                        flex items-center justify-center gap-2
-                                        ${
-                                            isToggling
-                                                ? "bg-gray-400 text-white cursor-not-allowed"
-                                                : "bg-amber-500 hover:bg-amber-600 text-white"
-                                        }
-                                    `}
-                                >
-                                    {isToggling ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                                            Deactivating...
-                                        </>
-                                    ) : (
-                                        "Deactivate Robot"
-                                    )}
-                                </button>
+                                
+                                {/* Only show Deactivate button if robot is OFFLINE */}
+                                {!isRobotOnline && (
+                                    <button
+                                        onClick={toggleRobot}
+                                        disabled={isToggling}
+                                        className={`
+                                            flex-1 px-4 py-3 rounded-lg font-semibold transition-all duration-200
+                                            flex items-center justify-center gap-2
+                                            ${
+                                                isToggling
+                                                    ? "bg-gray-400 text-white cursor-not-allowed"
+                                                    : "bg-amber-500 hover:bg-amber-600 text-white"
+                                            }
+                                        `}
+                                    >
+                                        {isToggling ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                                Deactivating...
+                                            </>
+                                        ) : (
+                                            'Deactivate Robot'
+                                        )}
+                                    </button>
+                                )}
                             </div>
 
-                            <p className="text-xs text-gray-500 text-center mt-4">
-                                You can reactivate the robot anytime from this
-                                dashboard
-                            </p>
+                            {!isRobotOnline && (
+                                <p className="text-xs text-gray-500 text-center mt-4">
+                                    You can reactivate the robot anytime from this dashboard
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>

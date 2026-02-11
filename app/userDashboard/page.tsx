@@ -166,16 +166,19 @@ const Dashboard: React.FC = () => {
         } else {
             // Otherwise, select the robot and update inspection summary
             setSelectedRobotId(robotId);
-            
-            const selectedRobot = robots.find(r => r.id === robotId);
+
+            const selectedRobot = robots.find((r) => r.id === robotId);
             if (selectedRobot?.inspection_summary) {
                 setData((prevData) => ({
                     ...prevData,
                     defects: {
-                        totalDetected: selectedRobot.inspection_summary!.defected,
+                        totalDetected:
+                            selectedRobot.inspection_summary!.defected,
                         totalScanned: selectedRobot.inspection_summary!.total,
-                        criticalDefects: selectedRobot.inspection_summary!.defected,
-                        minorDefects: selectedRobot.inspection_summary!.non_defected,
+                        criticalDefects:
+                            selectedRobot.inspection_summary!.defected,
+                        minorDefects:
+                            selectedRobot.inspection_summary!.non_defected,
                     },
                 }));
             }
@@ -309,7 +312,6 @@ const Dashboard: React.FC = () => {
                 };
 
                 ws.onclose = (event) => {
-
                     setWsStatus((prev) =>
                         new Map(prev).set(roboId, "disconnected"),
                     );
@@ -392,8 +394,13 @@ const Dashboard: React.FC = () => {
                 setError(null);
 
                 // Update Defect Analysis section with first robot's data (initially)
-                if (formattedRobots.length > 0 && formattedRobots[0].inspection_summary && !selectedRobotId) {
-                    const firstRobotInspection = formattedRobots[0].inspection_summary;
+                if (
+                    formattedRobots.length > 0 &&
+                    formattedRobots[0].inspection_summary &&
+                    !selectedRobotId
+                ) {
+                    const firstRobotInspection =
+                        formattedRobots[0].inspection_summary;
                     setData((prevData) => ({
                         ...prevData,
                         defects: {
@@ -468,7 +475,7 @@ const Dashboard: React.FC = () => {
     };
 
     // Get selected robot for display
-    const selectedRobot = robots.find(r => r.id === selectedRobotId);
+    const selectedRobot = robots.find((r) => r.id === selectedRobotId);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white text-slate-800 p-6 md:p-6 font-sans">
@@ -571,17 +578,19 @@ const Dashboard: React.FC = () => {
                                 </div>
                             ) : (
                                 robots.map((robot) => (
-                                    <div 
-                                        key={robot.id} 
+                                    <div
+                                        key={robot.id}
                                         className="group relative"
                                     >
                                         {/* Robot Card */}
                                         <div
-                                            onClick={() => handleRobotClick(robot.id)}
+                                            onClick={() =>
+                                                handleRobotClick(robot.id)
+                                            }
                                             className={`relative p-4 rounded-lg border cursor-pointer transition-all duration-200 hover:shadow-sm ${
-                                                selectedRobotId === robot.id 
-                                                    ? 'border-emerald-400 bg-emerald-50/50 shadow-sm' 
-                                                    : 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30'
+                                                selectedRobotId === robot.id
+                                                    ? "border-emerald-400 bg-emerald-50/50 shadow-sm"
+                                                    : "border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30"
                                             }`}
                                         >
                                             <div className="flex items-center justify-between">
@@ -589,12 +598,22 @@ const Dashboard: React.FC = () => {
                                                 <div className="flex items-center gap-4">
                                                     {/* Robot Avatar with Status */}
                                                     <div className="relative">
-                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                                                            selectedRobotId === robot.id 
-                                                                ? 'bg-gradient-to-br from-emerald-100 to-emerald-200'
-                                                                : 'bg-gradient-to-br from-slate-100 to-slate-200'
-                                                        }`}>
-                                                            <Bot className={selectedRobotId === robot.id ? 'text-emerald-600' : 'text-slate-400'} />
+                                                        <div
+                                                            className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                                                                selectedRobotId ===
+                                                                robot.id
+                                                                    ? "bg-gradient-to-br from-emerald-100 to-emerald-200"
+                                                                    : "bg-gradient-to-br from-slate-100 to-slate-200"
+                                                            }`}
+                                                        >
+                                                            <Bot
+                                                                className={
+                                                                    selectedRobotId ===
+                                                                    robot.id
+                                                                        ? "text-emerald-600"
+                                                                        : "text-slate-400"
+                                                                }
+                                                            />
                                                         </div>
                                                         {/* Status Indicator */}
                                                         <div
@@ -616,11 +635,14 @@ const Dashboard: React.FC = () => {
                                                     {/* Robot Details */}
                                                     <div>
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            <h3 className={`font-semibold transition-colors ${
-                                                                selectedRobotId === robot.id 
-                                                                    ? 'text-emerald-700'
-                                                                    : 'text-slate-900 group-hover:text-emerald-700'
-                                                            }`}>
+                                                            <h3
+                                                                className={`font-semibold transition-colors ${
+                                                                    selectedRobotId ===
+                                                                    robot.id
+                                                                        ? "text-emerald-700"
+                                                                        : "text-slate-900 group-hover:text-emerald-700"
+                                                                }`}
+                                                            >
                                                                 {robot.name}
                                                             </h3>
 
@@ -701,9 +723,14 @@ const Dashboard: React.FC = () => {
                                                     </div>
 
                                                     {/* Arrow Indicator */}
-                                                    <div className={`transition-opacity duration-200 ${
-                                                        selectedRobotId === robot.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                                                    }`}>
+                                                    <div
+                                                        className={`transition-opacity duration-200 ${
+                                                            selectedRobotId ===
+                                                            robot.id
+                                                                ? "opacity-100"
+                                                                : "opacity-0 group-hover:opacity-100"
+                                                        }`}
+                                                    >
                                                         <svg
                                                             className="w-5 h-5 text-emerald-500"
                                                             fill="none"
@@ -751,7 +778,11 @@ const Dashboard: React.FC = () => {
                                             {selectedRobotId === robot.id && (
                                                 <div className="mt-2 text-xs text-emerald-600 flex items-center gap-1">
                                                     <Eye className="w-3 h-3" />
-                                                    <span>Click again to view details • Inspection summary shown on right →</span>
+                                                    <span>
+                                                        Click again to view
+                                                        details • Inspection
+                                                        summary shown on right →
+                                                    </span>
                                                 </div>
                                             )}
                                         </div>
@@ -760,12 +791,19 @@ const Dashboard: React.FC = () => {
                             )}
                         </div>
                     </div>
+                    <button
+                        onClick={handleLogout}
+                        className="w-full mt-3 flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors border border-red-200"
+                    >
+                        <LogOut className="h-5 w-5" />
+                        <span className="font-medium">Logout</span>
+                    </button>
                 </div>
 
                 {/* Right Column - Defect Analysis */}
                 <div className="lg:col-span-1">
                     {/* Defect Metrics */}
-                    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 transition-all duration-200 hover:shadow-md hover:border-slate-200 mb-6">
+                    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 transition-all duration-200 hover:shadow-md hover:border-slate-200">
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-xl font-semibold flex items-center gap-3">
                                 <BarChart3
@@ -924,15 +962,6 @@ const Dashboard: React.FC = () => {
                             </div>
                         </div>
                     </div>
-
-                    {/* Logout Button */}
-                    <button
-                        onClick={handleLogout}
-                        className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors border border-red-200"
-                    >
-                        <LogOut className="h-5 w-5" />
-                        <span className="font-medium">Logout</span>
-                    </button>
                 </div>
             </main>
         </div>
