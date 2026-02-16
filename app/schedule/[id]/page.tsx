@@ -261,7 +261,7 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
         wsManagerRef.current = new RobotWebSocketManager({
             robotId: roboId,
-            baseUrl: "ws://192.168.0.216:8002",
+            baseUrl: "ws://192.168.0.224:8002",
             onScheduleUpdated: () => {
                 if (refreshTimeoutRef.current) {
                     clearTimeout(refreshTimeoutRef.current);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Robot } from "../../../types/robot";
 import { toast } from "sonner";
 
@@ -80,28 +80,179 @@ interface WSData {
         left?: JointStatusData[];
         right?: JointStatusData[];
     };
+    lastUpdated?: number; // Timestamp of last update
+}
+
+interface EventTimestamps {
+    camera_status_update?: number;
+    robot_joint_telemetry?: number;
+    robot_arm_status?: number;
+    robot_joint_status?: number;
+    can_status?: number;
+    battery_information?: number;
 }
 
 export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
     const [wsData, setWsData] = useState<WSData>({});
     const [wsConnected, setWsConnected] = useState(false);
     const [wsError, setWsError] = useState(false);
+    const eventTimestampsRef = useRef<EventTimestamps>({});
+    const timeoutCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL;
+    const TIMEOUT_DURATION = 2000; // 2 seconds
+
+    /* ================= Load Persisted Data ================= */
+    useEffect(() => {
+        if (isOpen && robot?.robo_id) {
+            // Load last known data from localStorage
+            const savedDataKey = `robot_${robot.robo_id}_last_data`;
+            const savedData = localStorage.getItem(savedDataKey);
+
+            if (savedData) {
+                try {
+                    const parsedData = JSON.parse(savedData);
+                    setWsData(parsedData);
+                } catch (error) {
+                    console.error("Failed to parse saved robot data:", error);
+                }
+            }
+        }
+    }, [isOpen, robot?.robo_id]);
+
+    /* ================= Save Data to localStorage ================= */
+    useEffect(() => {
+        if (robot?.robo_id && Object.keys(wsData).length > 0) {
+            const savedDataKey = `robot_${robot.robo_id}_last_data`;
+            try {
+                // Add timestamp to track when data was last updated
+                const dataToSave = {
+                    ...wsData,
+                    lastUpdated: Date.now(),
+                };
+                localStorage.setItem(savedDataKey, JSON.stringify(dataToSave));
+            } catch (error) {
+                console.error("Failed to save robot data:", error);
+            }
+        }
+    }, [wsData, robot?.robo_id]);
+
+    /* ================= Timeout Check for Stale Data ================= */
+    useEffect(() => {
+        if (!wsConnected) {
+            // Clear interval when disconnected
+            if (timeoutCheckIntervalRef.current) {
+                clearInterval(timeoutCheckIntervalRef.current);
+                timeoutCheckIntervalRef.current = null;
+            }
+            return;
+        }
+
+        // Check every 500ms for stale data
+        timeoutCheckIntervalRef.current = setInterval(() => {
+            const now = Date.now();
+            
+            setWsData((prev) => {
+                let updated = { ...prev };
+                let hasChanges = false;
+
+                // Check camera_status_update timeout
+                if (
+                    eventTimestampsRef.current.camera_status_update &&
+                    now - eventTimestampsRef.current.camera_status_update > TIMEOUT_DURATION
+                ) {
+                    if (updated.cameras || updated.location) {
+                        updated.cameras = undefined;
+                        updated.location = undefined;
+                        hasChanges = true;
+                        delete eventTimestampsRef.current.camera_status_update;
+                    }
+                }
+
+                // Check robot_joint_telemetry timeout
+                if (
+                    eventTimestampsRef.current.robot_joint_telemetry &&
+                    now - eventTimestampsRef.current.robot_joint_telemetry > TIMEOUT_DURATION
+                ) {
+                    if (updated.arm_joint_states) {
+                        updated.arm_joint_states = undefined;
+                        hasChanges = true;
+                        delete eventTimestampsRef.current.robot_joint_telemetry;
+                    }
+                }
+
+                // Check robot_arm_status timeout
+                if (
+                    eventTimestampsRef.current.robot_arm_status &&
+                    now - eventTimestampsRef.current.robot_arm_status > TIMEOUT_DURATION
+                ) {
+                    if (updated.arm_status) {
+                        updated.arm_status = undefined;
+                        hasChanges = true;
+                        delete eventTimestampsRef.current.robot_arm_status;
+                    }
+                }
+
+                // Check robot_joint_status timeout
+                if (
+                    eventTimestampsRef.current.robot_joint_status &&
+                    now - eventTimestampsRef.current.robot_joint_status > TIMEOUT_DURATION
+                ) {
+                    if (updated.robot_joint_status) {
+                        updated.robot_joint_status = undefined;
+                        hasChanges = true;
+                        delete eventTimestampsRef.current.robot_joint_status;
+                    }
+                }
+
+                // Check can_status timeout
+                if (
+                    eventTimestampsRef.current.can_status &&
+                    now - eventTimestampsRef.current.can_status > TIMEOUT_DURATION
+                ) {
+                    if (updated.can_status) {
+                        updated.can_status = undefined;
+                        hasChanges = true;
+                        delete eventTimestampsRef.current.can_status;
+                    }
+                }
+
+                // Check battery_information timeout
+                if (
+                    eventTimestampsRef.current.battery_information &&
+                    now - eventTimestampsRef.current.battery_information > TIMEOUT_DURATION
+                ) {
+                    if (updated.battery) {
+                        updated.battery = undefined;
+                        hasChanges = true;
+                        delete eventTimestampsRef.current.battery_information;
+                    }
+                }
+
+                return hasChanges ? updated : prev;
+            });
+        }, 500);
+
+        return () => {
+            if (timeoutCheckIntervalRef.current) {
+                clearInterval(timeoutCheckIntervalRef.current);
+            }
+        };
+    }, [wsConnected]);
 
     /* ================= WebSocket ================= */
     useEffect(() => {
         if (!isOpen || !robot?.robo_id) {
-            setWsData({});
             setWsConnected(false);
             setWsError(false);
+            // Clear all timestamps
+            eventTimestampsRef.current = {};
             return;
         }
 
         const roboId = robot.robo_id;
 
-
-        const ws = new WebSocket(
-            `ws://192.168.0.216:8002/ws/robot_message/${roboId}/`,
-        );
+        const ws = new WebSocket(`${wsUrl}/ws/robot_message/${roboId}/`);
 
         ws.onopen = () => {
             setWsConnected(true);
@@ -111,11 +262,12 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
         ws.onmessage = (event) => {
             try {
                 const payload = JSON.parse(event.data);
+                const now = Date.now();
 
-
-                /* 🔋 Battery Update */
                 /* 🔋 Battery Update */
                 if (payload.event === "battery_information") {
+                    eventTimestampsRef.current.battery_information = now;
+                    
                     const batteryData: BatteryInfo = {
                         soc: Number(payload.data?.soc) || 0,
                         voltage: Number(payload.data?.voltage) || 0,
@@ -135,6 +287,8 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                 /* 📍 Location & 📷 Camera Update */
                 if (payload.event === "camera_status_update") {
+                    eventTimestampsRef.current.camera_status_update = now;
+                    
                     setWsData((prev) => {
                         const newCameras = {
                             left: {
@@ -188,6 +342,8 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                 /* 🔄 Robot Joint Telemetry */
                 if (payload.event === "robot_joint_telemetry") {
+                    eventTimestampsRef.current.robot_joint_telemetry = now;
+                    
                     const arm = payload.data?.arm;
                     const joints: JointData[] = payload.data?.joints || [];
 
@@ -209,6 +365,8 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                 /* 🦾 Robot Arm Status */
                 if (payload.event === "robot_arm_status") {
+                    eventTimestampsRef.current.robot_arm_status = now;
+                    
                     const armData: ArmStatusData = payload.data;
 
                     setWsData((prev) => ({
@@ -222,6 +380,8 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                 /* 🔗 Robot Joint Status */
                 if (payload.event === "robot_joint_status") {
+                    eventTimestampsRef.current.robot_joint_status = now;
+                    
                     const arm = payload.data?.arm;
                     const joints: JointStatusData[] =
                         payload.data?.joints || [];
@@ -237,25 +397,31 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                 /* 📡 CAN Status */
                 if (payload.event === "can_status") {
+                    eventTimestampsRef.current.can_status = now;
+                    
                     setWsData((prev) => ({
                         ...prev,
                         can_status: payload.data,
                     }));
                 }
             } catch (err) {
+                console.error("WebSocket message parse error:", err);
             }
         };
 
         ws.onerror = (err) => {
+            console.error("WebSocket error:", err);
             setWsError(true);
         };
 
         ws.onclose = () => {
             setWsConnected(false);
+            eventTimestampsRef.current = {};
         };
 
         return () => {
             ws.close();
+            eventTimestampsRef.current = {};
         };
     }, [isOpen, robot?.robo_id, robot?.location]);
 
@@ -312,6 +478,22 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
         return "bg-red-50 text-red-700";
     };
 
+    const formatLastUpdated = (timestamp?: number) => {
+        if (!timestamp) return null;
+        const now = Date.now();
+        const diff = now - timestamp;
+        const seconds = Math.floor(diff / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+
+        if (days > 0) return `${days}d ago`;
+        if (hours > 0) return `${hours}h ago`;
+        if (minutes > 0) return `${minutes}m ago`;
+        if (seconds > 0) return `${seconds}s ago`;
+        return "just now";
+    };
+
     /* ================= Live Values ================= */
 
     const liveBattery = wsData?.battery?.soc ?? robot.battery_level;
@@ -322,6 +504,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
     const canStatus = wsData?.can_status;
     const armStatus = wsData?.arm_status;
     const robotJointStatus = wsData?.robot_joint_status;
+    const lastUpdatedTime = wsData?.lastUpdated;
 
     /* ================= Empty State Component ================= */
     const EmptyState = ({ message }: { message: string }) => (
@@ -406,6 +589,13 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                                   ? "Connection Error"
                                   : "Connecting..."}
                         </span>
+
+                        {/* Last Updated Badge */}
+                        {!wsConnected && lastUpdatedTime && (
+                            <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                Cached: {formatLastUpdated(lastUpdatedTime)}
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -419,10 +609,30 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                             </p>
                             <p className="text-xs text-red-600 mt-1">
                                 Unable to connect to the robot's live data
-                                stream. Showing last known data only.
+                                stream. Showing last known data
+                                {lastUpdatedTime &&
+                                    ` from ${formatLastUpdated(lastUpdatedTime)}`}
+                                .
                             </p>
                         </div>
                     )}
+
+                    {/* Showing Cached Data Notice */}
+                    {!wsConnected &&
+                        !wsError &&
+                        Object.keys(wsData).length > 0 &&
+                        lastUpdatedTime && (
+                            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <p className="text-sm font-semibold text-blue-800">
+                                    Showing Cached Data
+                                </p>
+                                <p className="text-xs text-blue-600 mt-1">
+                                    Displaying last known data from{" "}
+                                    {formatLastUpdated(lastUpdatedTime)}.
+                                    Connecting to live stream...
+                                </p>
+                            </div>
+                        )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Left Column */}
@@ -1165,6 +1375,13 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 <div className="p-4 border-t bg-gray-50 text-center text-xs text-gray-500">
                     Robot ID: {robot.id} • Updated:{" "}
                     {formatDateTime(robot.updated_at)}
+                    {lastUpdatedTime && !wsConnected && (
+                        <>
+                            {" "}
+                            • Last Live Data:{" "}
+                            {formatLastUpdated(lastUpdatedTime)}
+                        </>
+                    )}
                 </div>
             </div>
         </div>

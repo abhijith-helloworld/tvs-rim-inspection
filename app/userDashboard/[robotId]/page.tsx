@@ -129,6 +129,7 @@ interface RobotData {
     name: string;
     status: string;
     robo_id?: string;
+    minimum_battery_charge?: number;
 }
 
 /* ================= FILTER MODAL COMPONENT ================= */
@@ -314,6 +315,53 @@ const MapNotUploadedPopup = ({
     );
 };
 
+/* ================= LOW BATTERY WARNING POPUP ================= */
+const LowBatteryWarningPopup = ({
+    isOpen,
+    onClose,
+    batteryLevel,
+    minimumThreshold,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    batteryLevel: number;
+    minimumThreshold: number;
+}) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-rose-200">
+                <div className="p-6 text-center">
+                    <div className="mx-auto w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mb-4">
+                        <Battery className="w-8 h-8 text-rose-600" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-slate-900 mb-2">
+                        Low Battery Warning
+                    </h3>
+                    <p className="text-slate-600 mb-4">
+                        Battery level is critically low at{" "}
+                        <span className="font-bold text-rose-600">
+                            {batteryLevel.toFixed(1)}%
+                        </span>
+                    </p>
+                    <p className="text-sm text-slate-500 mb-6">
+                        Minimum required: {minimumThreshold}%
+                        <br />
+                        Please charge the robot immediately.
+                    </p>
+                    <button
+                        onClick={onClose}
+                        className="w-full px-6 py-3 rounded-xl font-medium bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-lg"
+                    >
+                        Acknowledge
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 /* ================= MAIN COMPONENT ================= */
 
 const Dashboard: React.FC = () => {
@@ -344,6 +392,11 @@ const Dashboard: React.FC = () => {
     const [isModeActive, setIsModeActive] = useState(false);
     const [showMapNotUploadedPopup, setShowMapNotUploadedPopup] =
         useState(false);
+
+    /* ---- low battery warning state ---- */
+    const [showLowBatteryPopup, setShowLowBatteryPopup] = useState(false);
+    const [lowBatteryAcknowledged, setLowBatteryAcknowledged] = useState(false);
+
     const [wsConnected, setWsConnected] = useState(false);
 
     /* ---- WebSocket reference ---- */
@@ -456,6 +509,32 @@ const Dashboard: React.FC = () => {
         fetchRobotData();
     }, [robotId]);
 
+    /* ================= CHECK LOW BATTERY ================= */
+    useEffect(() => {
+        if (!robotData?.minimum_battery_charge) return;
+
+        const minimumCharge = robotData.minimum_battery_charge;
+        const currentLevel = data.battery.level;
+
+        // Show popup if battery is below minimum and not charging and not already acknowledged
+        if (
+            currentLevel < minimumCharge &&
+            data.battery.status !== "charging" &&
+            !lowBatteryAcknowledged
+        ) {
+            setShowLowBatteryPopup(true);
+        } else if (currentLevel >= minimumCharge) {
+            // Reset acknowledgement if battery goes back above threshold
+            setLowBatteryAcknowledged(false);
+            setShowLowBatteryPopup(false);
+        }
+    }, [
+        data.battery.level,
+        data.battery.status,
+        robotData,
+        lowBatteryAcknowledged,
+    ]);
+
     /* ================= FETCH FILTERED SCHEDULE & INSPECTION DATA ================= */
     useEffect(() => {
         if (!robotId) return;
@@ -535,12 +614,12 @@ const Dashboard: React.FC = () => {
                 const locationsObj = locationData?.locations || {};
                 const locationsArray =
                     Object.values(locationsObj).filter(Boolean);
-                const mapName = locationData?.map_name || ""; // ✅ DECLARE mapName HERE
+                const mapName = locationData?.map_name || "";
 
                 setData((prev) => ({
                     ...prev,
                     locations: locationsArray as string[],
-                    mapName: mapName, // ✅ NOW mapName is defined
+                    mapName: mapName,
                 }));
             } catch (err) {
                 console.error("Error fetching locations:", err);
@@ -567,7 +646,7 @@ const Dashboard: React.FC = () => {
             return;
         }
 
-        const cleanedLocationName = locationName.trim(); // 🔥 remove leading & trailing spaces
+        const cleanedLocationName = locationName.trim();
 
         const message = {
             event: "move_to_location",
@@ -598,7 +677,6 @@ const Dashboard: React.FC = () => {
             navigation_mode: mode,
         };
 
-        // Only include navigation_style when in autonomous mode
         if (mode === "autonomous" && style) {
             payload.navigation_style = style;
         }
@@ -619,7 +697,6 @@ const Dashboard: React.FC = () => {
         } catch (err) {
             console.error("❌ Navigation PATCH error:", err);
             setNavPatchError("Failed to update navigation");
-            // Revert the mode on error
             setNavigationMode(
                 mode === "autonomous" ? "stationary" : "autonomous",
             );
@@ -630,7 +707,6 @@ const Dashboard: React.FC = () => {
 
     /* ---- toggle handler ---- */
     const handleToggleNavigation = () => {
-        // Check if autonomous is ready before allowing toggle
         if (!isAutonomousReady) {
             setShowMapNotUploadedPopup(true);
             return;
@@ -641,7 +717,6 @@ const Dashboard: React.FC = () => {
             navigationMode === "stationary" ? "autonomous" : "stationary";
         setNavigationMode(next);
 
-        // Only pass style when switching to autonomous
         patchNavigation(
             next,
             next === "autonomous" ? navigationStyle : undefined,
@@ -657,6 +732,12 @@ const Dashboard: React.FC = () => {
         patchNavigation(navigationMode, style);
     };
 
+    /* ---- low battery popup close handler ---- */
+    const handleLowBatteryClose = () => {
+        setShowLowBatteryPopup(false);
+        setLowBatteryAcknowledged(true);
+    };
+
     /* ================= WEBSOCKET ================= */
     useEffect(() => {
         if (!roboId) {
@@ -670,7 +751,7 @@ const Dashboard: React.FC = () => {
 
         const connect = () => {
             try {
-                const wsUrl = `ws://192.168.0.216:8002/ws/robot_message/${roboId}/`;
+                const wsUrl = `ws://192.168.0.224:8002/ws/robot_message/${roboId}/`;
 
                 ws = new WebSocket(wsUrl);
                 wsRef.current = ws;
@@ -714,7 +795,6 @@ const Dashboard: React.FC = () => {
                                         prev.canStatus.can1,
                                 },
                             }));
-                            ("🔌 CAN Status updated:", payload.data);
                         }
 
                         /* ================= CAMERA STATUS ================= */
@@ -926,6 +1006,13 @@ const Dashboard: React.FC = () => {
             <MapNotUploadedPopup
                 isOpen={showMapNotUploadedPopup}
                 onClose={() => setShowMapNotUploadedPopup(false)}
+            />
+
+            <LowBatteryWarningPopup
+                isOpen={showLowBatteryPopup}
+                onClose={handleLowBatteryClose}
+                batteryLevel={data.battery.level}
+                minimumThreshold={robotData?.minimum_battery_charge || 20}
             />
 
             <header className="mb-4">
@@ -1549,8 +1636,6 @@ const Dashboard: React.FC = () => {
                                             ],
                                         ] as const
                                     ).map(([value, label]) => {
-                                        // "Free" is always enabled
-                                        // "Strict" and "Strict Auto" are only enabled when isModeActive is true
                                         const isStrictMode = value !== "free";
                                         const buttonDisabled =
                                             isStrictMode && !isModeActive;

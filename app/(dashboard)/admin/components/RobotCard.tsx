@@ -44,7 +44,7 @@ export function RobotCard({
             try {
                 // Create WebSocket connection using robot's robo_id
                 const ws = new WebSocket(
-                    `ws://192.168.0.216:8002/ws/robot_message/${robot.robo_id}/`,
+                    `ws://192.168.0.224:8002/ws/robot_message/${robot.robo_id}/`,
                 );
 
                 ws.onopen = () => {

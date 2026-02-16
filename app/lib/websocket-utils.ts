@@ -12,7 +12,7 @@ export interface WebSocketMessage {
 
 export interface RobotWebSocketConfig {
     robotId: string;
-    baseUrl: string; // e.g., "ws://192.168.0.216:8002"
+    baseUrl: string; // e.g., "ws://192.168.0.224:8002"
     onMessage?: (message: WebSocketMessage) => void;
     onScheduleUpdated?: () => void;
     onError?: (error: Error) => void;
