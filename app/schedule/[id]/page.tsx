@@ -261,7 +261,7 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
 
         wsManagerRef.current = new RobotWebSocketManager({
             robotId: roboId,
-            baseUrl: "ws://192.168.1.100:8002",
+            baseUrl: "ws://192.168.0.216:8002",
             onScheduleUpdated: () => {
                 if (refreshTimeoutRef.current) {
                     clearTimeout(refreshTimeoutRef.current);
@@ -434,53 +434,6 @@ function ScheduleListPage({ robotId: robotIdProp }: ScheduleListPageProps) {
                                 )}
                             </p>
                         </div>
-                    </div>
-
-                    {/* WebSocket Status Badge */}
-                    <div className="flex items-center gap-2">
-                        {wsConnected ? (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 rounded-lg border border-emerald-200">
-                                <Wifi className="w-4 h-4 text-emerald-600 animate-pulse" />
-                                <span className="text-sm font-medium text-emerald-700">
-                                    Live
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
-                                <WifiOff className="w-4 h-4 text-gray-600" />
-                                <span className="text-sm font-medium text-gray-700">
-                                    Offline
-                                </span>
-                            </div>
-                        )}
-
-                        {/* Refresh Button */}
-                        <button
-                            onClick={handleManualRefresh}
-                            disabled={isRefreshing}
-                            className="flex items-center gap-2 px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors disabled:opacity-50"
-                        >
-                            {isRefreshing ? (
-                                <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                            ) : (
-                                <svg
-                                    className="w-4 h-4 text-blue-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                    />
-                                </svg>
-                            )}
-                            <span className="text-sm font-medium text-blue-700">
-                                {isRefreshing ? "Refreshing..." : "Refresh"}
-                            </span>
-                        </button>
                     </div>
                 </div>
             </div>

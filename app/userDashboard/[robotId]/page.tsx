@@ -170,18 +170,18 @@ const FilterModal = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200">
-                <div className="p-6 border-b border-slate-200">
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full border border-gray-200">
+                <div className="p-6 border-b border-gray-100">
                     <div className="flex items-center justify-between">
-                        <h3 className="text-xl font-semibold text-slate-900">
+                        <h3 className="text-xl font-semibold text-gray-900">
                             Filter Schedules
                         </h3>
                         <button
                             onClick={onClose}
-                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                         >
-                            <X className="w-5 h-5 text-slate-600" />
+                            <X className="w-5 h-5 text-gray-500" />
                         </button>
                     </div>
                 </div>
@@ -189,7 +189,7 @@ const FilterModal = ({
                 <div className="p-6 space-y-6">
                     {/* Filter Type Selection */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-3">
                             Filter Type
                         </label>
                         <div className="grid grid-cols-2 gap-3">
@@ -198,10 +198,10 @@ const FilterModal = ({
                                     <button
                                         key={type}
                                         onClick={() => setFilterType(type)}
-                                        className={`px-4 py-3 rounded-xl font-medium transition-all ${
+                                        className={`px-4 py-2.5 rounded-lg font-medium transition-all ${
                                             filterType === type
-                                                ? "bg-slate-900 text-white shadow-lg"
-                                                : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+                                                ? "bg-emerald-500 text-white shadow-sm"
+                                                : "bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
                                         }`}
                                     >
                                         {type.charAt(0).toUpperCase() +
@@ -215,7 +215,7 @@ const FilterModal = ({
                     {/* Date Selection */}
                     {filterType !== "range" && (
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Select Date
                             </label>
                             <input
@@ -224,7 +224,7 @@ const FilterModal = ({
                                 onChange={(e) =>
                                     setSelectedDate(e.target.value)
                                 }
-                                className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
                             />
                         </div>
                     )}
@@ -233,7 +233,7 @@ const FilterModal = ({
                     {filterType === "range" && (
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
                                     Start Date
                                 </label>
                                 <input
@@ -242,34 +242,34 @@ const FilterModal = ({
                                     onChange={(e) =>
                                         setStartDate(e.target.value)
                                     }
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
                                     End Date
                                 </label>
                                 <input
                                     type="date"
                                     value={endDate}
                                     onChange={(e) => setEndDate(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
                                 />
                             </div>
                         </div>
                     )}
                 </div>
 
-                <div className="p-6 border-t border-slate-200 flex gap-3">
+                <div className="p-6 border-t border-gray-100 flex gap-3">
                     <button
                         onClick={onClose}
-                        className="flex-1 px-6 py-3 rounded-xl font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                        className="flex-1 px-6 py-2.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
                     >
                         Cancel
                     </button>
                     <button
                         onClick={handleApply}
-                        className="flex-1 px-6 py-3 rounded-xl font-medium bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-lg"
+                        className="flex-1 px-6 py-2.5 rounded-lg font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-sm"
                     >
                         Apply Filter
                     </button>
@@ -616,7 +616,6 @@ const Dashboard: React.FC = () => {
             if (!response.ok) {
                 throw new Error(`PATCH failed: ${response.status}`);
             }
-
         } catch (err) {
             console.error("❌ Navigation PATCH error:", err);
             setNavPatchError("Failed to update navigation");
@@ -665,14 +664,13 @@ const Dashboard: React.FC = () => {
             return;
         }
 
-
         let ws: WebSocket | null = null;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
         let isManualClose = false;
 
         const connect = () => {
             try {
-                const wsUrl = `ws://192.168.1.100:8002/ws/robot_message/${roboId}/`;
+                const wsUrl = `ws://192.168.0.216:8002/ws/robot_message/${roboId}/`;
 
                 ws = new WebSocket(wsUrl);
                 wsRef.current = ws;
@@ -808,7 +806,6 @@ const Dashboard: React.FC = () => {
 
                             setIsAutonomousReady(ready);
                             setIsModeActive(modeActive);
-
                         }
                     } catch (err) {
                         console.error("❌ WebSocket message parse error:", err);
@@ -931,9 +928,9 @@ const Dashboard: React.FC = () => {
                 onClose={() => setShowMapNotUploadedPopup(false)}
             />
 
-            <header className="mb-6">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6 bg-gray-100 px-3 py-3 rounded-2xl">
-                    <div >
+            <header className="mb-4">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-gray-100 px-3 py-3 rounded-2xl">
+                    <div>
                         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight flex items-center gap-3">
                             <Cpu className="text-slate-700" size={28} />
                             <span className="bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
@@ -1073,7 +1070,7 @@ const Dashboard: React.FC = () => {
                 <div className="lg:w-3/5 space-y-6">
                     {/* Defect Analysis (Inspection Summary) */}
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-2 gap-4">
                             <h2 className="text-xl font-semibold flex items-center gap-3">
                                 <BarChart3
                                     className="text-amber-500/80"

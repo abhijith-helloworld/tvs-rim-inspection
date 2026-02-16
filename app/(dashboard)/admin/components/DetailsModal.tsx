@@ -100,7 +100,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
 
         const ws = new WebSocket(
-            `ws://192.168.1.100:8002/ws/robot_message/${roboId}/`,
+            `ws://192.168.0.216:8002/ws/robot_message/${roboId}/`,
         );
 
         ws.onopen = () => {

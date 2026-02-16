@@ -50,13 +50,18 @@ export default function RimTypePage() {
             const res = await fetchWithAuth(`${API_BASE_URL}/rim-types/`);
             const json = await res.json();
 
-            if (json.success) {
+            // Handle nested results structure
+            if (json.results && json.results.success) {
+                setRimTypes(json.results.data || []);
+            } else if (json.success) {
+                // Fallback for direct success response
                 setRimTypes(json.data || []);
             } else {
-                setError(json.message || "Failed to load rim types");
+                setError(json.results?.message || json.message || "Failed to load rim types");
             }
         } catch (err) {
             setError("Something went wrong while fetching rim types");
+            console.error("Fetch error:", err);
         } finally {
             setLoading(false);
         }
@@ -114,6 +119,7 @@ export default function RimTypePage() {
             }
         } catch (err) {
             alert("Failed to save rim type");
+            console.error("Submit error:", err);
         }
     };
 
@@ -218,7 +224,7 @@ export default function RimTypePage() {
                                 <p className="text-2xl font-bold text-green-600 mt-1">
                                     {
                                         rimTypes.filter(
-                                            (r) => r.status === "active",
+                                            (r) => r.is_active,
                                         ).length
                                     }
                                 </p>
@@ -248,7 +254,13 @@ export default function RimTypePage() {
                                     Last Added
                                 </p>
                                 <p className="text-sm font-medium text-gray-900 mt-1">
-                                    Today
+                                    {rimTypes.length > 0 
+                                        ? new Date(rimTypes[0].created_at).toLocaleDateString("en-US", {
+                                            month: "short",
+                                            day: "numeric"
+                                        })
+                                        : "N/A"
+                                    }
                                 </p>
                             </div>
                             <div className="w-12 h-12 rounded-lg  flex items-center justify-center">
@@ -273,12 +285,13 @@ export default function RimTypePage() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-gray-500">
-                                    Categories
+                                    Inactive
                                 </p>
                                 <p className="text-2xl font-bold text-amber-600 mt-1">
                                     {
-                                        new Set(rimTypes.map((r) => r.category))
-                                            .size
+                                        rimTypes.filter(
+                                            (r) => !r.is_active,
+                                        ).length
                                     }
                                 </p>
                             </div>
@@ -293,7 +306,7 @@ export default function RimTypePage() {
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
                                         strokeWidth="2"
-                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
                                     />
                                 </svg>
                             </div>

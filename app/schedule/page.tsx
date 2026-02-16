@@ -97,7 +97,7 @@ function DashboardContent() {
 
     return (
         <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50/30 p-6">
-            <header className="mb-6 bg-gray-100 px-3 py-3 rounded-2xl">
+            <header className="mb-3 bg-gray-100 px-3 py-3 rounded-2xl">
                 <div className="flex justify-between items-center">
                     <div>
                         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight flex items-center gap-3">

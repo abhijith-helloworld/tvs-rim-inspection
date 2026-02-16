@@ -81,9 +81,6 @@ function RimTypeTable({ data, loading, onEdit }: RimTypeTableProps) {
                                     className="px-6 py-12 text-center"
                                 >
                                     <div className="max-w-sm mx-auto">
-                                        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-                                            <Image src={Rim} alt="" />
-                                        </div>
                                         <h3 className="text-lg font-semibold text-gray-900 mb-2">
                                             No rim types found
                                         </h3>

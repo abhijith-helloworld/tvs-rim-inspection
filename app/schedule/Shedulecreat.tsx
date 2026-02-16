@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { fetchWithAuth, API_BASE_URL, tokenStorage } from "../lib/auth";
 import {
@@ -12,8 +12,7 @@ import {
     AlertCircle,
     Loader2,
     Zap,
-    ArrowLeft,
-    Cpu,
+    ChevronDown,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 
@@ -42,6 +41,13 @@ function ScheduleCreatePage() {
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [robotInfo, setRobotInfo] = useState<any>(null);
     const [isLoadingRobot, setIsLoadingRobot] = useState(true);
+    
+    // Location dropdown states
+    const [locations, setLocations] = useState<string[]>([]);
+    const [isLoadingLocations, setIsLoadingLocations] = useState(true);
+    const [showDropdown, setShowDropdown] = useState(false);
+    const [filteredLocations, setFilteredLocations] = useState<string[]>([]);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     /* ===================== INITIALIZE ROBOT ID ===================== */
     useEffect(() => {
@@ -94,6 +100,58 @@ function ScheduleCreatePage() {
         fetchRobotInfo();
     }, [robotId, isInitialized]);
 
+    /* ===================== FETCH LOCATIONS ===================== */
+    useEffect(() => {
+        const fetchLocations = async () => {
+            if (!robotId || !isInitialized) {
+                return;
+            }
+
+            try {
+                setIsLoadingLocations(true);
+                const response = await fetchWithAuth(
+                    `${API_BASE_URL}/robots/${robotId}/location/`,
+                );
+
+                if (!response.ok) {
+                    throw new Error("Failed to fetch locations");
+                }
+
+                const data = await response.json();
+                
+                if (data.success && data.data?.location_data?.data?.locations) {
+                    const locationsObj = data.data.location_data.data.locations;
+                    // Extract location values from the object
+                    const locationsList = Object.values(locationsObj).filter(
+                        (loc) => loc && typeof loc === "string" && loc.trim() !== ""
+                    ) as string[];
+                    
+                    setLocations(locationsList);
+                    setFilteredLocations(locationsList);
+                }
+            } catch (error) {
+                console.error("Error fetching locations:", error);
+                // Don't show error toast, just log it - locations are optional
+            } finally {
+                setIsLoadingLocations(false);
+            }
+        };
+
+        fetchLocations();
+    }, [robotId, isInitialized]);
+
+    /* ===================== CLOSE DROPDOWN ON OUTSIDE CLICK ===================== */
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setShowDropdown(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
     const handleChange = (
         e: React.ChangeEvent<
             HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -106,6 +164,43 @@ function ScheduleCreatePage() {
         }));
         if (errors[name]) {
             setErrors((prev) => ({ ...prev, [name]: "" }));
+        }
+    };
+
+    // Handle location input change with filtering
+    const handleLocationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setFormData((prev) => ({
+            ...prev,
+            location: value,
+        }));
+        
+        // Filter locations based on input
+        if (value.trim() === "") {
+            setFilteredLocations(locations);
+        } else {
+            const filtered = locations.filter((loc) =>
+                loc.toLowerCase().includes(value.toLowerCase())
+            );
+            setFilteredLocations(filtered);
+        }
+        
+        setShowDropdown(true);
+        
+        if (errors.location) {
+            setErrors((prev) => ({ ...prev, location: "" }));
+        }
+    };
+
+    // Handle location selection from dropdown
+    const handleLocationSelect = (location: string) => {
+        setFormData((prev) => ({
+            ...prev,
+            location: location,
+        }));
+        setShowDropdown(false);
+        if (errors.location) {
+            setErrors((prev) => ({ ...prev, location: "" }));
         }
     };
 
@@ -412,8 +507,8 @@ function ScheduleCreatePage() {
                                     onSubmit={handleSubmit}
                                     className="space-y-6"
                                 >
-                                    {/* Location Field */}
-                                    <div>
+                                    {/* Location Field with Dropdown */}
+                                    <div ref={dropdownRef}>
                                         <div className="flex items-center space-x-2 mb-3">
                                             <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
                                                 <MapPin className="h-4 w-4 text-gray-600" />
@@ -421,28 +516,58 @@ function ScheduleCreatePage() {
                                             <label className="text-sm font-medium text-gray-700">
                                                 Inspection Location *
                                             </label>
+                                            {isLoadingLocations && (
+                                                <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+                                            )}
                                         </div>
-                                        <input
-                                            type="text"
-                                            name="location"
-                                            value={formData.location}
-                                            onChange={handleChange}
-                                            placeholder="e.g., Production Line A, Zone 3"
-                                            className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 placeholder-gray-400 ${
-                                                errors.location
-                                                    ? "border-red-400/50"
-                                                    : ""
-                                            }`}
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                name="location"
+                                                value={formData.location}
+                                                onChange={handleLocationChange}
+                                                onFocus={() => setShowDropdown(true)}
+                                                placeholder="Type or select a location"
+                                                autoComplete="off"
+                                                className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 placeholder-gray-400 ${
+                                                    errors.location
+                                                        ? "border-red-400/50"
+                                                        : ""
+                                                }`}
+                                            />
+                                            <ChevronDown 
+                                                className={`absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 transition-transform ${
+                                                    showDropdown ? "rotate-180" : ""
+                                                }`}
+                                            />
+                                            
+                                            {/* Dropdown Menu */}
+                                            {showDropdown && filteredLocations.length > 0 && (
+                                                <div className="absolute z-10 w-full mt-2 bg-white rounded-xl border border-gray-200/50 shadow-lg max-h-60 overflow-y-auto scroll-hide">
+                                                    {filteredLocations.map((location, index) => (
+                                                        <div
+                                                            key={index}
+                                                            onClick={() => handleLocationSelect(location)}
+                                                            className="px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0 flex items-center space-x-2"
+                                                        >
+                                                            <MapPin className="h-4 w-4 text-gray-400" />
+                                                            <span className="text-gray-700">{location}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                         {errors.location && (
-                                            <p className="text-red-500 text-sm mt-2 flex items-center space-x-1">
+                                            <p className="text-red-500 text-sm flex items-center space-x-1">
                                                 <AlertCircle className="w-4 h-4" />
                                                 <span>{errors.location}</span>
                                             </p>
                                         )}
                                         <p className="text-xs text-gray-500 mt-2">
-                                            Enter the exact location where
-                                            inspection will occur
+                                            {locations.length > 0 
+                                                ? "Select from saved locations or type a custom location"
+                                                : "Enter the exact location where inspection will occur"
+                                            }
                                         </p>
                                     </div>
 
@@ -450,7 +575,7 @@ function ScheduleCreatePage() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {/* Date Field */}
                                         <div>
-                                            <div className="flex items-center space-x-2 mb-3">
+                                            <div className="flex items-center space-x-2 mb-2">
                                                 <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
                                                     <CalendarDays className="h-4 w-4 text-gray-600" />
                                                 </div>
@@ -529,7 +654,7 @@ function ScheduleCreatePage() {
                                             }`}
                                         />
                                         {errors.endTime && (
-                                            <p className="text-red-500 text-sm mt-2 flex items-center space-x-1">
+                                            <p className="text-red-500 text-sm flex items-center space-x-1">
                                                 <AlertCircle className="w-4 h-4" />
                                                 <span>{errors.endTime}</span>
                                             </p>
@@ -540,7 +665,7 @@ function ScheduleCreatePage() {
                                     </div>
 
                                     {/* Action Buttons */}
-                                    <div className="pt-4 space-y-3 border-t border-gray-200/30">
+                                    <div className="space-y-3 border-t border-gray-200/30">
                                         {/* Create Schedule Button */}
                                         <button
                                             type="submit"

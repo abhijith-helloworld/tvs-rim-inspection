@@ -147,8 +147,8 @@ export default function ArmCalibration({
     // WebSocket connection effect
     useEffect(() => {
         const wsUrl = selectedProfileId
-            ? `ws://192.168.1.100:8002/ws/robot_message/${roboId}/profile/`
-            : `ws://192.168.1.100:8002/ws/robot_message/${roboId}/profile/`;
+            ? `ws://192.168.0.216:8002/ws/robot_message/${roboId}/profile/`
+            : `ws://192.168.0.216:8002/ws/robot_message/${roboId}/profile/`;
 
         const websocket = new WebSocket(wsUrl);
 
@@ -1144,19 +1144,6 @@ export default function ArmCalibration({
                                                                 >
                                                                     Reset
                                                                 </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => updatePoints(hand)}
-                                                                    disabled={
-                                                                        !hands[hand] ||
-                                                                        loading ||
-                                                                        selectedPoints[hand].size === 0 ||
-                                                                        Array.from(selectedPoints[hand]).some((p) => !pointData[hand][p])
-                                                                    }
-                                                                    className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                                                >
-                                                                    Update
-                                                                </button>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -1196,13 +1183,6 @@ export default function ArmCalibration({
                                                 className="px-4 py-2.5 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                             >
                                                 Retry
-                                            </button>
-                                            <button
-                                                onClick={() => handleTestModalUpdate("left")}
-                                                disabled={loading || Array.from(selectedPoints.left).some((p) => !pointData.left[p])}
-                                                className="px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                            >
-                                                Update
                                             </button>
                                         </div>
                                     </div>

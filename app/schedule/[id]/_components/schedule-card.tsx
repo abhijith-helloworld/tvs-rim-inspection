@@ -407,7 +407,7 @@ function EditScheduleModal({ schedule, onClose, onUpdate }: EditScheduleModalPro
                         <button
                             type="submit"
                             disabled={isSaving}
-                            className="flex-1 px-4 py-2.5 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-400 text-white rounded-lg font-medium hover:bg-gradient-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
                             {isSaving ? (
                                 <>

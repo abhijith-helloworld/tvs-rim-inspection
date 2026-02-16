@@ -2,77 +2,94 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-  const token = request.cookies.get("access_token")?.value;
-  const role = request.cookies.get("role")?.value;
+  const { pathname, searchParams } = request.nextUrl;
 
-  // ---- Public Routes (no auth needed) ----
-  if (pathname === "/login") {
-    // If already logged in, redirect based on role
-    if (token) {
-      if (role === "ADMIN") {
-        return NextResponse.redirect(new URL("/admin", request.url));
-      }
-      return NextResponse.redirect(new URL("/userDashboard", request.url));
-    }
-    // Allow unauthenticated access to login
+  // ✅ Read token + role from URL (coming from Flutter)
+  const urlToken = searchParams.get("token");
+  const urlRole = searchParams.get("role");
+
+  // ✅ Read token + role from cookies (after first login)
+  const cookieToken = request.cookies.get("access_token")?.value;
+  const cookieRole = request.cookies.get("role")?.value;
+
+  // -------------------------------------------------
+  // ✅ FIRST TIME LOGIN FROM FLUTTER
+  // Example: /admin?token=XXX&role=ADMIN
+  // -------------------------------------------------
+  if (urlToken && urlRole) {
+    const cleanUrl = new URL(
+      urlRole === "ADMIN" ? "/admin" : "/userDashboard",
+      request.url
+    );
+
+    const response = NextResponse.redirect(cleanUrl);
+
+    // IMPORTANT for LAN (http://192.168.x.x)
+    response.cookies.set({
+      name: "access_token",
+      value: urlToken,
+      httpOnly: false,
+      secure: false,      // must be false for HTTP
+      sameSite: "lax",
+      path: "/",
+    });
+
+    response.cookies.set({
+      name: "role",
+      value: urlRole,
+      httpOnly: false,
+      secure: false,
+      sameSite: "lax",
+      path: "/",
+    });
+
+    return response;
+  }
+
+  // -------------------------------------------------
+  // ✅ PUBLIC ROUTES (no login needed)
+  // -------------------------------------------------
+  const publicRoutes = ["/login", "/register"];
+
+  if (publicRoutes.some(route => pathname.startsWith(route))) {
     return NextResponse.next();
   }
 
-  // ---- Not Logged In ----
-  if (!token) {
+  // -------------------------------------------------
+  // ❌ Not Logged In
+  // -------------------------------------------------
+  if (!cookieToken) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // ---- ADMIN ACCESS ----
-  if (role === "ADMIN") {
-    return NextResponse.next(); // Admin can access everything
-  }
-
-  // ---- USER ACCESS ----
-  if (role === "USER") {
-    // Define exact allowed routes for users
-    const allowedUserRoutes = [
-      "/userDashboard",
-      "/users",
-      "/arm",
-      "/rimType",
-      "/inspections",
-      "/schedule",
-    ];
-
-    // Check if pathname matches exactly OR starts with allowed route + "/"
-    const isAllowed = allowedUserRoutes.some(route => {
-      return pathname === route || pathname.startsWith(route + "/");
-    });
-
-    // Block admin routes
-    if (pathname.startsWith("/admin")) {
-      return NextResponse.redirect(new URL("/userDashboard", request.url));
-    }
-
-    // Block any non-allowed routes
-    if (!isAllowed) {
-      return NextResponse.redirect(new URL("/userDashboard", request.url));
-    }
-
+  // -------------------------------------------------
+  // ✅ ADMIN ACCESS
+  // -------------------------------------------------
+  if (cookieRole === "ADMIN") {
     return NextResponse.next();
   }
 
-  // ---- Unknown Role or No Role ----
+  // -------------------------------------------------
+  // ✅ USER ACCESS (block admin)
+  // -------------------------------------------------
+  if (cookieRole === "USER") {
+    if (pathname.startsWith("/admin")) {
+      return NextResponse.redirect(new URL("/userDashboard", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // -------------------------------------------------
+  // ❌ Unknown role
+  // -------------------------------------------------
   return NextResponse.redirect(new URL("/login", request.url));
 }
 
+// -------------------------------------------------
+// ✅ Ignore static + API
+// -------------------------------------------------
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - api routes
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico, sitemap.xml, robots.txt (static files)
-     * - public folder files (images, etc.)
-     */
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
