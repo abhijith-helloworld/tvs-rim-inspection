@@ -147,8 +147,8 @@ export default function ArmCalibration({
     // WebSocket connection effect
     useEffect(() => {
         const wsUrl = selectedProfileId
-            ? `ws://192.168.0.224:8002/ws/robot_message/${roboId}/profile/`
-            : `ws://192.168.0.224:8002/ws/robot_message/${roboId}/profile/`;
+            ? `ws://192.168.0.216:8002/ws/robot_message/${roboId}/profile/`
+            : `ws://192.168.0.216:8002/ws/robot_message/${roboId}/profile/`;
 
         const websocket = new WebSocket(wsUrl);
 

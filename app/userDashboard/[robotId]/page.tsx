@@ -1,22 +1,19 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { fetchWithAuth, API_BASE_URL } from "../../lib/auth";
 import {
     BarChart3,
     Battery,
-    Cpu,
     AlertTriangle,
     CheckCircle,
     Calendar,
     Clock,
     HardDrive,
     CalendarCheck,
-    CalendarX,
     Zap,
     Loader2,
     Camera,
-    Disc,
     AlertCircle,
     Move,
     Filter,
@@ -24,21 +21,23 @@ import {
     X,
     Navigation,
     MapPin,
-    Wifi,
-    Armchair,
     Handshake,
 } from "lucide-react";
+import RobotDashboardHeader from "@/app/Includes/header";
 
-/* ================= TYPES ================= */
+/* ================================================================
+   SHARED TYPES
+   ================================================================ */
 
-interface CameraStatus {
-    connected: boolean;
-    usb_speed: string;
-    profiles_ok: boolean;
-    frames_ok: boolean;
+export interface RobotData {
+    id: string;
+    name: string;
+    status: string;
+    robo_id?: string;
+    minimum_battery_charge?: number;
 }
 
-interface BatteryStatus {
+export interface BatteryStatus {
     level: number;
     status: "charging" | "discharging" | "full" | "low";
     timeRemaining: string;
@@ -48,15 +47,26 @@ interface BatteryStatus {
     dod?: number;
 }
 
+export interface RobotStatus {
+    break_status: boolean;
+    emergency_status: boolean;
+    Arm_moving: boolean;
+}
+
+/* ================================================================
+   OTHER LOCAL TYPES
+   ================================================================ */
+
+interface CameraStatus {
+    connected: boolean;
+    usb_speed: string;
+    profiles_ok: boolean;
+    frames_ok: boolean;
+}
+
 interface CanStatus {
     can0: boolean;
     can1: boolean;
-}
-
-interface LocationData {
-    location1: string;
-    location2: string;
-    location3: string;
 }
 
 interface ArmJoint {
@@ -75,12 +85,6 @@ interface ArmStatus {
     joints: ArmJoint[];
 }
 
-interface RobotStatus {
-    break_status: boolean;
-    emergency_status: boolean;
-    Arm_moving: boolean;
-}
-
 interface InspectionSummary {
     total: number;
     defected: number;
@@ -97,7 +101,7 @@ interface ScheduleSummary {
     completed: number;
 }
 
-interface FilterData {
+export interface FilterData {
     filter_type: "day" | "week" | "month" | "range";
     date?: string;
     start_date?: string;
@@ -114,25 +118,33 @@ interface DashboardData {
     schedules: ScheduleSummary;
     battery: BatteryStatus;
     arm: ArmStatus;
-    cameras: {
-        left: CameraStatus;
-        right: CameraStatus;
-    };
+    cameras: { left: CameraStatus; right: CameraStatus };
     locations?: string[];
     mapName?: string;
     robotStatus: RobotStatus;
     canStatus: CanStatus;
 }
 
-interface RobotData {
-    id: string;
-    name: string;
-    status: string;
-    robo_id?: string;
-    minimum_battery_charge?: number;
-}
+/* ================================================================
+   DEFAULT VALUES
+   ================================================================ */
 
-/* ================= FILTER MODAL COMPONENT ================= */
+const DEFAULT_BATTERY: BatteryStatus = {
+    level: 0,
+    status: "discharging",
+    timeRemaining: "0h 0m",
+};
+
+const DEFAULT_ROBOT_STATUS: RobotStatus = {
+    break_status: false,
+    emergency_status: false,
+    Arm_moving: false,
+};
+
+/* ================================================================
+   FILTER MODAL
+   ================================================================ */
+
 const FilterModal = ({
     isOpen,
     onClose,
@@ -148,10 +160,10 @@ const FilterModal = ({
         currentFilter.filter_type,
     );
     const [selectedDate, setSelectedDate] = useState(
-        currentFilter.date || new Date().toISOString().split("T")[0],
+        currentFilter.date ?? new Date().toISOString().split("T")[0],
     );
-    const [startDate, setStartDate] = useState(currentFilter.start_date || "");
-    const [endDate, setEndDate] = useState(currentFilter.end_date || "");
+    const [startDate, setStartDate] = useState(currentFilter.start_date ?? "");
+    const [endDate, setEndDate] = useState(currentFilter.end_date ?? "");
 
     if (!isOpen) return null;
 
@@ -160,12 +172,10 @@ const FilterModal = ({
             filter_type: filterType,
             date: selectedDate,
         };
-
         if (filterType === "range") {
             filter.start_date = startDate;
             filter.end_date = endDate;
         }
-
         onApply(filter);
         onClose();
     };
@@ -173,22 +183,19 @@ const FilterModal = ({
     return (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl max-w-md w-full border border-gray-200">
-                <div className="p-6 border-b border-gray-100">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-xl font-semibold text-gray-900">
-                            Filter Schedules
-                        </h3>
-                        <button
-                            onClick={onClose}
-                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                            <X className="w-5 h-5 text-gray-500" />
-                        </button>
-                    </div>
+                <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                    <h3 className="text-xl font-semibold text-gray-900">
+                        Filter Schedules
+                    </h3>
+                    <button
+                        onClick={onClose}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                        <X className="w-5 h-5 text-gray-500" />
+                    </button>
                 </div>
 
                 <div className="p-6 space-y-6">
-                    {/* Filter Type Selection */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-3">
                             Filter Type
@@ -213,8 +220,7 @@ const FilterModal = ({
                         </div>
                     </div>
 
-                    {/* Date Selection */}
-                    {filterType !== "range" && (
+                    {filterType !== "range" ? (
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Select Date
@@ -228,35 +234,30 @@ const FilterModal = ({
                                 className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
                             />
                         </div>
-                    )}
-
-                    {/* Range Selection */}
-                    {filterType === "range" && (
+                    ) : (
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Start Date
-                                </label>
-                                <input
-                                    type="date"
-                                    value={startDate}
-                                    onChange={(e) =>
-                                        setStartDate(e.target.value)
-                                    }
-                                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    End Date
-                                </label>
-                                <input
-                                    type="date"
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
-                                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
-                                />
-                            </div>
+                            {(["start", "end"] as const).map((which) => (
+                                <div key={which}>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        {which === "start" ? "Start" : "End"}{" "}
+                                        Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={
+                                            which === "start"
+                                                ? startDate
+                                                : endDate
+                                        }
+                                        onChange={(e) =>
+                                            which === "start"
+                                                ? setStartDate(e.target.value)
+                                                : setEndDate(e.target.value)
+                                        }
+                                        className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
+                                    />
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
@@ -280,7 +281,10 @@ const FilterModal = ({
     );
 };
 
-/* ================= MAP NOT UPLOADED POPUP ================= */
+/* ================================================================
+   MAP NOT UPLOADED POPUP
+   ================================================================ */
+
 const MapNotUploadedPopup = ({
     isOpen,
     onClose,
@@ -289,33 +293,33 @@ const MapNotUploadedPopup = ({
     onClose: () => void;
 }) => {
     if (!isOpen) return null;
-
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200">
-                <div className="p-6 text-center">
-                    <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
-                        <AlertTriangle className="w-8 h-8 text-amber-600" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                        Map Not Uploaded
-                    </h3>
-                    <p className="text-slate-600 mb-6">
-                        Please upload a map before enabling autonomous mode.
-                    </p>
-                    <button
-                        onClick={onClose}
-                        className="w-full px-6 py-3 rounded-xl font-medium bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-lg"
-                    >
-                        OK
-                    </button>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-slate-200 p-6 text-center">
+                <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+                    <AlertTriangle className="w-8 h-8 text-amber-600" />
                 </div>
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">
+                    Map Not Uploaded
+                </h3>
+                <p className="text-slate-600 mb-6">
+                    Please upload a map before enabling autonomous mode.
+                </p>
+                <button
+                    onClick={onClose}
+                    className="w-full px-6 py-3 rounded-xl font-medium bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-lg"
+                >
+                    OK
+                </button>
             </div>
         </div>
     );
 };
 
-/* ================= LOW BATTERY WARNING POPUP ================= */
+/* ================================================================
+   LOW BATTERY WARNING POPUP
+   ================================================================ */
+
 const LowBatteryWarningPopup = ({
     isOpen,
     onClose,
@@ -328,41 +332,39 @@ const LowBatteryWarningPopup = ({
     minimumThreshold: number;
 }) => {
     if (!isOpen) return null;
-
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-rose-200">
-                <div className="p-6 text-center">
-                    <div className="mx-auto w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mb-4">
-                        <Battery className="w-8 h-8 text-rose-600" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                        Low Battery Warning
-                    </h3>
-                    <p className="text-slate-600 mb-4">
-                        Battery level is critically low at{" "}
-                        <span className="font-bold text-rose-600">
-                            {batteryLevel.toFixed(1)}%
-                        </span>
-                    </p>
-                    <p className="text-sm text-slate-500 mb-6">
-                        Minimum required: {minimumThreshold}%
-                        <br />
-                        Please charge the robot immediately.
-                    </p>
-                    <button
-                        onClick={onClose}
-                        className="w-full px-6 py-3 rounded-xl font-medium bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-lg"
-                    >
-                        Acknowledge
-                    </button>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full border border-rose-200 p-6 text-center">
+                <div className="mx-auto w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mb-4">
+                    <Battery className="w-8 h-8 text-rose-600" />
                 </div>
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">
+                    Low Battery Warning
+                </h3>
+                <p className="text-slate-600 mb-4">
+                    Battery level is critically low at{" "}
+                    <span className="font-bold text-rose-600">
+                        {batteryLevel.toFixed(1)}%
+                    </span>
+                </p>
+                <p className="text-sm text-slate-500 mb-6">
+                    Minimum required: {minimumThreshold}%<br />
+                    Please charge the robot immediately.
+                </p>
+                <button
+                    onClick={onClose}
+                    className="w-full px-6 py-3 rounded-xl font-medium bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-lg"
+                >
+                    Acknowledge
+                </button>
             </div>
         </div>
     );
 };
 
-/* ================= MAIN COMPONENT ================= */
+/* ================================================================
+   MAIN DASHBOARD COMPONENT
+   ================================================================ */
 
 const Dashboard: React.FC = () => {
     const [robotId, setRobotId] = useState<string>("");
@@ -376,30 +378,29 @@ const Dashboard: React.FC = () => {
         date: new Date().toISOString().split("T")[0],
     });
 
-    /* ---- navigation toggle state ---- */
+    /* ---- navigation state ---- */
     const [navigationMode, setNavigationMode] = useState<
         "stationary" | "autonomous"
     >("stationary");
     const [navigationStyle, setNavigationStyle] = useState<
         "free" | "strict" | "strict_with_autonomous"
     >("free");
-
     const [navPatchLoading, setNavPatchLoading] = useState(false);
     const [navPatchError, setNavPatchError] = useState<string | null>(null);
 
     /* ---- autonomous ready state ---- */
     const [isAutonomousReady, setIsAutonomousReady] = useState(false);
     const [isModeActive, setIsModeActive] = useState(false);
-    const [showMapNotUploadedPopup, setShowMapNotUploadedPopup] =
-        useState(false);
+    const [showMapNotUploadedPopup, setShowMapNotUploadedPopup] = useState(false);
 
     /* ---- low battery warning state ---- */
     const [showLowBatteryPopup, setShowLowBatteryPopup] = useState(false);
     const [lowBatteryAcknowledged, setLowBatteryAcknowledged] = useState(false);
 
-    const [wsConnected, setWsConnected] = useState(false);
+    /* ---- location loading state ---- */
+    const [locationLoading, setLocationLoading] = useState(false);
 
-    /* ---- WebSocket reference ---- */
+    const [wsConnected, setWsConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
 
     const [data, setData] = useState<DashboardData>({
@@ -411,17 +412,8 @@ const Dashboard: React.FC = () => {
             human_verified: 0,
             pending_verification: 0,
         },
-        schedules: {
-            total: 0,
-            scheduled: 0,
-            processing: 0,
-            completed: 0,
-        },
-        battery: {
-            level: 0,
-            status: "discharging",
-            timeRemaining: "0h 0m",
-        },
+        schedules: { total: 0, scheduled: 0, processing: 0, completed: 0 },
+        battery: DEFAULT_BATTERY,
         arm: {
             connected: true,
             temperature: 42.5,
@@ -429,73 +421,43 @@ const Dashboard: React.FC = () => {
             velocity: 2.5,
             gripperStatus: "open",
             joints: [
-                { id: 1, name: "Base", position: 45, status: "normal" },
-                { id: 2, name: "Shoulder", position: 120, status: "normal" },
-                { id: 3, name: "Elbow", position: 90, status: "warning" },
-                { id: 4, name: "Wrist", position: 60, status: "normal" },
-                { id: 5, name: "Gripper", position: 30, status: "normal" },
+                { id: 1, name: "Base",     position: 45,  status: "normal"  },
+                { id: 2, name: "Shoulder", position: 120, status: "normal"  },
+                { id: 3, name: "Elbow",    position: 90,  status: "warning" },
+                { id: 4, name: "Wrist",    position: 60,  status: "normal"  },
+                { id: 5, name: "Gripper",  position: 30,  status: "normal"  },
             ],
         },
         cameras: {
-            left: {
-                connected: false,
-                usb_speed: "",
-                profiles_ok: false,
-                frames_ok: false,
-            },
-            right: {
-                connected: false,
-                usb_speed: "",
-                profiles_ok: false,
-                frames_ok: false,
-            },
+            left:  { connected: false, usb_speed: "", profiles_ok: false, frames_ok: false },
+            right: { connected: false, usb_speed: "", profiles_ok: false, frames_ok: false },
         },
         locations: [],
         mapName: undefined,
-        robotStatus: {
-            break_status: false,
-            emergency_status: false,
-            Arm_moving: false,
-        },
-        canStatus: {
-            can0: false,
-            can1: false,
-        },
+        robotStatus: DEFAULT_ROBOT_STATUS,
+        canStatus: { can0: false, can1: false },
     });
 
     const [time, setTime] = useState(new Date().toLocaleTimeString());
 
-    /* ================= GET ROBOT ID FROM URL ================= */
+    /* ── Get robot ID from URL path ── */
     useEffect(() => {
-        const pathParts = window.location.pathname.split("/");
-        const id = pathParts[pathParts.length - 1];
-        setRobotId(id);
+        const parts = window.location.pathname.split("/");
+        setRobotId(parts[parts.length - 1]);
     }, []);
 
-    /* ================= FETCH ROBOT DATA ================= */
+    /* ── Fetch robot data ── */
     useEffect(() => {
         if (!robotId) return;
-
         const fetchRobotData = async () => {
             try {
                 setLoading(true);
-                const response = await fetchWithAuth(
-                    `${API_BASE_URL}/robots/${robotId}/`,
-                );
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error: ${response.status}`);
-                }
-
-                const result = await response.json();
-
-                const robotData: RobotData = result.data;
-                setRobotData(robotData);
-
-                if (robotData.robo_id) {
-                    setRoboId(robotData.robo_id);
-                }
-
+                const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/`);
+                if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                const result = await res.json();
+                const robot: RobotData = result.data;
+                setRobotData(robot);
+                if (robot.robo_id) setRoboId(robot.robo_id);
                 setError(null);
             } catch (err) {
                 console.error("Error fetching robot data:", err);
@@ -505,370 +467,293 @@ const Dashboard: React.FC = () => {
                 setLoading(false);
             }
         };
-
         fetchRobotData();
     }, [robotId]);
 
-    /* ================= CHECK LOW BATTERY ================= */
+    /* ── Low battery check ── */
     useEffect(() => {
         if (!robotData?.minimum_battery_charge) return;
+        const { level, status } = data.battery;
+        const min = robotData.minimum_battery_charge;
+        const isDischarging = status === "discharging" || status === "low";
 
-        const minimumCharge = robotData.minimum_battery_charge;
-        const currentLevel = data.battery.level;
-
-        // Show popup if battery is below minimum and not charging and not already acknowledged
-        if (
-            currentLevel < minimumCharge &&
-            data.battery.status !== "charging" &&
-            !lowBatteryAcknowledged
-        ) {
+        if (level < min && isDischarging && !lowBatteryAcknowledged) {
             setShowLowBatteryPopup(true);
-        } else if (currentLevel >= minimumCharge) {
-            // Reset acknowledgement if battery goes back above threshold
+        } else if (level >= min || status === "charging" || status === "full") {
             setLowBatteryAcknowledged(false);
             setShowLowBatteryPopup(false);
         }
-    }, [
-        data.battery.level,
-        data.battery.status,
-        robotData,
-        lowBatteryAcknowledged,
-    ]);
+    }, [data.battery.level, data.battery.status, robotData, lowBatteryAcknowledged]);
 
-    /* ================= FETCH FILTERED SCHEDULE & INSPECTION DATA ================= */
+    /* ── Fetch filtered schedule + inspection data ── */
     useEffect(() => {
         if (!robotId) return;
-
         const fetchFilteredData = async () => {
             try {
-                const response = await fetchWithAuth(
+                const res = await fetchWithAuth(
                     `${API_BASE_URL}/schedule/robot/${robotId}/filter/`,
                     {
                         method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                        },
+                        headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(currentFilter),
                     },
                 );
+                if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                const result = await res.json();
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error: ${response.status}`);
-                }
-
-                const result = await response.json();
-
-                if (result.schedule_summary) {
-                    setData((prev) => ({
-                        ...prev,
+                setData((prev) => ({
+                    ...prev,
+                    ...(result.schedule_summary && {
                         schedules: {
-                            total: result.schedule_summary.total || 0,
-                            scheduled: result.schedule_summary.scheduled || 0,
-                            processing: result.schedule_summary.processing || 0,
-                            completed: result.schedule_summary.completed || 0,
+                            total:      result.schedule_summary.total      ?? 0,
+                            scheduled:  result.schedule_summary.scheduled  ?? 0,
+                            processing: result.schedule_summary.processing ?? 0,
+                            completed:  result.schedule_summary.completed  ?? 0,
                         },
-                    }));
-                }
-
-                if (result.inspection_summary) {
-                    setData((prev) => ({
-                        ...prev,
+                    }),
+                    ...(result.inspection_summary && {
                         inspection: {
-                            total: result.inspection_summary.total || 0,
-                            defected: result.inspection_summary.defected || 0,
-                            non_defected:
-                                result.inspection_summary.non_defected || 0,
-                            approved: result.inspection_summary.approved || 0,
-                            human_verified:
-                                result.inspection_summary.human_verified || 0,
-                            pending_verification:
-                                result.inspection_summary
-                                    .pending_verification || 0,
+                            total:                result.inspection_summary.total                ?? 0,
+                            defected:             result.inspection_summary.defected             ?? 0,
+                            non_defected:         result.inspection_summary.non_defected         ?? 0,
+                            approved:             result.inspection_summary.approved             ?? 0,
+                            human_verified:       result.inspection_summary.human_verified       ?? 0,
+                            pending_verification: result.inspection_summary.pending_verification ?? 0,
                         },
-                    }));
-                }
+                    }),
+                }));
             } catch (err) {
                 console.error("Error fetching filtered data:", err);
             }
         };
-
         fetchFilteredData();
     }, [robotId, currentFilter]);
 
-    /* ================= FETCH LOCATIONS ================= */
+    /* ================================================================
+       FETCH LOCATIONS — extracted as a reusable callback so both the
+       initial load AND the upload_clicked WS event can call it
+       ================================================================ */
+    const fetchLocations = useCallback(async (id: string) => {
+        if (!id) return;
+        try {
+            setLocationLoading(true);
+            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${id}/location/`);
+            if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+            const result = await res.json();
+            const locationData = result?.data?.location_data?.data;
+            const locationsArray = Object.values(
+                locationData?.locations ?? {},
+            ).filter(Boolean) as string[];
+            setData((prev) => ({
+                ...prev,
+                locations: locationsArray,
+                mapName: locationData?.map_name ?? "",
+            }));
+        } catch (err) {
+            console.error("Error fetching locations:", err);
+        } finally {
+            setLocationLoading(false);
+        }
+    }, []);
+
+    /* ── Initial location fetch ── */
     useEffect(() => {
         if (!robotId) return;
+        fetchLocations(robotId);
+    }, [robotId, fetchLocations]);
 
-        const fetchLocations = async () => {
-            try {
-                const response = await fetchWithAuth(
-                    `${API_BASE_URL}/robots/${robotId}/location/`,
-                );
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error: ${response.status}`);
-                }
-
-                const result = await response.json();
-                const locationData = result?.data?.location_data?.data;
-                const locationsObj = locationData?.locations || {};
-                const locationsArray =
-                    Object.values(locationsObj).filter(Boolean);
-                const mapName = locationData?.map_name || "";
-
-                setData((prev) => ({
-                    ...prev,
-                    locations: locationsArray as string[],
-                    mapName: mapName,
-                }));
-            } catch (err) {
-                console.error("Error fetching locations:", err);
-            }
-        };
-
-        fetchLocations();
-    }, [robotId]);
-
-    /* ================= CLOCK ================= */
+    /* ── Clock ── */
     useEffect(() => {
-        const interval = setInterval(() => {
-            setTime(new Date().toLocaleTimeString());
-        }, 1000);
+        const interval = setInterval(
+            () => setTime(new Date().toLocaleTimeString()),
+            1000,
+        );
         return () => clearInterval(interval);
     }, []);
 
-    /* ================= HANDLE LOCATION CLICK ================= */
-    const handleLocationClick = (locationName: string) => {
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-            console.warn(
-                "⚠️ WebSocket not connected. Cannot send location click event.",
-            );
-            return;
-        }
-
-        const cleanedLocationName = locationName.trim();
-
-        const message = {
-            event: "move_to_location",
-            data: {
-                location_name: cleanedLocationName,
-                navigation_style: navigationStyle,
-                status: true,
-            },
-        };
-
-        try {
-            wsRef.current.send(JSON.stringify(message));
-        } catch (err) {
-            console.error("❌ Failed to send location click:", err);
-        }
-    };
-
-    /* ================= PATCH NAVIGATION ================= */
-    const patchNavigation = async (
-        mode: "stationary" | "autonomous",
-        style?: "free" | "strict" | "strict_with_autonomous",
-    ) => {
-        if (!robotId) return;
-        setNavPatchLoading(true);
-        setNavPatchError(null);
-
-        const payload: NavigationPayload = {
-            navigation_mode: mode,
-        };
-
-        if (mode === "autonomous" && style) {
-            payload.navigation_style = style;
-        }
-
-        try {
-            const response = await fetchWithAuth(
-                `${API_BASE_URL}/robots/${robotId}/navigation/`,
-                {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                },
-            );
-
-            if (!response.ok) {
-                throw new Error(`PATCH failed: ${response.status}`);
+    /* ── Location click via WebSocket ── */
+    const handleLocationClick = useCallback(
+        (locationName: string) => {
+            if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+                console.warn("⚠️ WebSocket not connected.");
+                return;
             }
-        } catch (err) {
-            console.error("❌ Navigation PATCH error:", err);
-            setNavPatchError("Failed to update navigation");
-            setNavigationMode(
-                mode === "autonomous" ? "stationary" : "autonomous",
+            wsRef.current.send(
+                JSON.stringify({
+                    event: "move_to_location",
+                    data: {
+                        location_name: locationName.trim(),
+                        navigation_style: navigationStyle,
+                        status: true,
+                    },
+                }),
             );
-        } finally {
-            setNavPatchLoading(false);
-        }
-    };
+        },
+        [navigationStyle],
+    );
 
-    /* ---- toggle handler ---- */
-    const handleToggleNavigation = () => {
+    /* ── PATCH navigation ── */
+    const patchNavigation = useCallback(
+        async (
+            mode: "stationary" | "autonomous",
+            style?: "free" | "strict" | "strict_with_autonomous",
+        ) => {
+            if (!robotId) return;
+            setNavPatchLoading(true);
+            setNavPatchError(null);
+            const payload: NavigationPayload = { navigation_mode: mode };
+            if (mode === "autonomous" && style)
+                payload.navigation_style = style;
+
+            try {
+                const res = await fetchWithAuth(
+                    `${API_BASE_URL}/robots/${robotId}/navigation/`,
+                    {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload),
+                    },
+                );
+                if (!res.ok) throw new Error(`PATCH failed: ${res.status}`);
+            } catch (err) {
+                console.error("❌ Navigation PATCH error:", err);
+                setNavPatchError("Failed to update navigation");
+                setNavigationMode((prev) =>
+                    prev === "autonomous" ? "stationary" : "autonomous",
+                );
+            } finally {
+                setNavPatchLoading(false);
+            }
+        },
+        [robotId],
+    );
+
+    const handleToggleNavigation = useCallback(() => {
         if (!isAutonomousReady) {
             setShowMapNotUploadedPopup(true);
             return;
         }
-
         if (navPatchLoading) return;
-        const next =
-            navigationMode === "stationary" ? "autonomous" : "stationary";
+        const next = navigationMode === "stationary" ? "autonomous" : "stationary";
         setNavigationMode(next);
+        patchNavigation(next, next === "autonomous" ? navigationStyle : undefined);
+    }, [isAutonomousReady, navPatchLoading, navigationMode, navigationStyle, patchNavigation]);
 
-        patchNavigation(
-            next,
-            next === "autonomous" ? navigationStyle : undefined,
-        );
-    };
+    const handleStyleChange = useCallback(
+        (style: "free" | "strict" | "strict_with_autonomous") => {
+            if (navPatchLoading) return;
+            setNavigationStyle(style);
+            patchNavigation(navigationMode, style);
+        },
+        [navPatchLoading, navigationMode, patchNavigation],
+    );
 
-    /* ---- style change handler ---- */
-    const handleStyleChange = (
-        style: "free" | "strict" | "strict_with_autonomous",
-    ) => {
-        if (navPatchLoading) return;
-        setNavigationStyle(style);
-        patchNavigation(navigationMode, style);
-    };
-
-    /* ---- low battery popup close handler ---- */
-    const handleLowBatteryClose = () => {
+    const handleLowBatteryClose = useCallback(() => {
         setShowLowBatteryPopup(false);
         setLowBatteryAcknowledged(true);
-    };
+    }, []);
 
-    /* ================= WEBSOCKET ================= */
+    /* ================================================================
+       WEBSOCKET
+       — upload_clicked event: status:true → refetch locations
+       ================================================================ */
     useEffect(() => {
-        if (!roboId) {
-            console.warn("⚠️ WebSocket not initialized: robo_id is missing");
-            return;
-        }
-
-        let ws: WebSocket | null = null;
-        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        if (!roboId) return;
         let isManualClose = false;
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        let ws: WebSocket | null = null;
 
         const connect = () => {
             try {
-                const wsUrl = `ws://192.168.0.224:8002/ws/robot_message/${roboId}/`;
-
-                ws = new WebSocket(wsUrl);
+                ws = new WebSocket(
+                    `ws://192.168.0.216:8002/ws/robot_message/${roboId}/`,
+                );
                 wsRef.current = ws;
 
-                ws.onopen = () => {
-                    setWsConnected(true);
-                };
+                ws.onopen = () => setWsConnected(true);
 
                 ws.onmessage = (event) => {
                     try {
-                        const payload = JSON.parse(event.data);
+                        const payload = JSON.parse(event.data as string);
 
-                        /* ================= ROBOT STATUS ================= */
+                        /* ── upload_clicked ──────────────────────────────
+                           When the user uploads a new map on the robot,
+                           the WS fires this event with status:true.
+                           We immediately refetch /robots/${robotId}/location/
+                           so the location list reflects the new map.
+                        ─────────────────────────────────────────────── */
+                        if (payload.event === "upload_clicked") {
+                            if (payload.data?.status === true) {
+                                console.log("📍 upload_clicked received — refreshing locations...");
+                                fetchLocations(robotId);
+                            }
+                        }
+
                         if (payload.event === "robot_status") {
                             setData((prev) => ({
                                 ...prev,
                                 robotStatus: {
                                     break_status:
-                                        payload.data.break_status ??
-                                        prev.robotStatus.break_status,
+                                        payload.data.break_status     ?? prev.robotStatus.break_status,
                                     emergency_status:
-                                        payload.data.emergency_status ??
-                                        prev.robotStatus.emergency_status,
+                                        payload.data.emergency_status ?? prev.robotStatus.emergency_status,
                                     Arm_moving:
-                                        payload.data.Arm_moving ??
-                                        prev.robotStatus.Arm_moving,
+                                        payload.data.Arm_moving       ?? prev.robotStatus.Arm_moving,
                                 },
                             }));
                         }
 
-                        /* ================= CAN STATUS ================= */
                         if (payload.event === "can_status") {
                             setData((prev) => ({
                                 ...prev,
                                 canStatus: {
-                                    can0:
-                                        payload.data.can0 ??
-                                        prev.canStatus.can0,
-                                    can1:
-                                        payload.data.can1 ??
-                                        prev.canStatus.can1,
+                                    can0: payload.data.can0 ?? prev.canStatus.can0,
+                                    can1: payload.data.can1 ?? prev.canStatus.can1,
                                 },
                             }));
                         }
 
-                        /* ================= CAMERA STATUS ================= */
                         if (payload.event === "camera_status_update") {
                             setData((prev) => ({
                                 ...prev,
                                 cameras: {
                                     left: {
-                                        connected:
-                                            payload.data.left_camera
-                                                ?.connected ??
-                                            prev.cameras.left.connected,
-                                        usb_speed:
-                                            payload.data.left_camera
-                                                ?.usb_speed ??
-                                            prev.cameras.left.usb_speed,
-                                        profiles_ok:
-                                            payload.data.left_camera
-                                                ?.profiles_ok ??
-                                            prev.cameras.left.profiles_ok,
-                                        frames_ok:
-                                            payload.data.left_camera
-                                                ?.frames_ok ??
-                                            prev.cameras.left.frames_ok,
+                                        connected:   payload.data.left_camera?.connected   ?? prev.cameras.left.connected,
+                                        usb_speed:   payload.data.left_camera?.usb_speed   ?? prev.cameras.left.usb_speed,
+                                        profiles_ok: payload.data.left_camera?.profiles_ok ?? prev.cameras.left.profiles_ok,
+                                        frames_ok:   payload.data.left_camera?.frames_ok   ?? prev.cameras.left.frames_ok,
                                     },
                                     right: {
-                                        connected:
-                                            payload.data.right_camera
-                                                ?.connected ??
-                                            prev.cameras.right.connected,
-                                        usb_speed:
-                                            payload.data.right_camera
-                                                ?.usb_speed ??
-                                            prev.cameras.right.usb_speed,
-                                        profiles_ok:
-                                            payload.data.right_camera
-                                                ?.profiles_ok ??
-                                            prev.cameras.right.profiles_ok,
-                                        frames_ok:
-                                            payload.data.right_camera
-                                                ?.frames_ok ??
-                                            prev.cameras.right.frames_ok,
+                                        connected:   payload.data.right_camera?.connected   ?? prev.cameras.right.connected,
+                                        usb_speed:   payload.data.right_camera?.usb_speed   ?? prev.cameras.right.usb_speed,
+                                        profiles_ok: payload.data.right_camera?.profiles_ok ?? prev.cameras.right.profiles_ok,
+                                        frames_ok:   payload.data.right_camera?.frames_ok   ?? prev.cameras.right.frames_ok,
                                     },
                                 },
                             }));
                         }
 
-                        /* ================= BATTERY INFO ================= */
                         if (payload.event === "battery_information") {
-                            const soc = Number(payload.data?.soc) || 0;
+                            const soc     = Number(payload.data?.soc)     || 0;
                             const current = Number(payload.data?.current) || 0;
                             const voltage = Number(payload.data?.voltage) || 0;
-                            const power = Number(payload.data?.power) || 0;
-                            const dod = Number(payload.data?.dod) || 0;
+                            const power   = Number(payload.data?.power)   || 0;
+                            const dod     = Number(payload.data?.dod)     || 0;
 
-                            let batteryStatus:
-                                | "charging"
-                                | "discharging"
-                                | "full"
-                                | "low";
+                            const status: BatteryStatus["status"] =
+                                current > 0.5 ? "charging"
+                                : soc >= 99   ? "full"
+                                : soc < 20    ? "low"
+                                :               "discharging";
 
-                            if (current > 0.5) batteryStatus = "charging";
-                            else if (soc >= 99) batteryStatus = "full";
-                            else if (soc < 20) batteryStatus = "low";
-                            else batteryStatus = "discharging";
-
-                            const hours = Math.floor(soc / 20);
+                            const hours   = Math.floor(soc / 20);
                             const minutes = Math.floor((soc % 20) * 3);
 
                             setData((prev) => ({
                                 ...prev,
                                 battery: {
                                     level: soc,
-                                    status: batteryStatus,
+                                    status,
                                     timeRemaining: `${hours}h ${minutes}m`,
                                     voltage,
                                     current,
@@ -878,93 +763,80 @@ const Dashboard: React.FC = () => {
                             }));
                         }
 
-                        /* ================= AUTONOMOUS MODE WITH MODE_ACTIVE ================= */
                         if (payload.event === "autonomous_ready") {
-                            const ready = payload.data?.status === true;
-                            const modeActive =
-                                payload.data?.mode_active === true;
-
-                            setIsAutonomousReady(ready);
-                            setIsModeActive(modeActive);
+                            setIsAutonomousReady(payload.data?.status === true);
+                            setIsModeActive(payload.data?.mode_active === true);
                         }
                     } catch (err) {
-                        console.error("❌ WebSocket message parse error:", err);
+                        console.error("❌ WS message parse error:", err);
                     }
                 };
 
-                ws.onerror = (err) => {
-                    console.error("❌ WebSocket error:", err);
-                };
+                ws.onerror = (err) => console.error("❌ WS error:", err);
 
                 ws.onclose = () => {
                     setWsConnected(false);
                     wsRef.current = null;
-
-                    if (!isManualClose) {
+                    if (!isManualClose)
                         reconnectTimeout = setTimeout(connect, 3000);
-                    }
                 };
             } catch (err) {
-                console.error("❌ WebSocket init failed:", err);
-                if (!isManualClose) {
+                console.error("❌ WS init failed:", err);
+                if (!isManualClose)
                     reconnectTimeout = setTimeout(connect, 3000);
-                }
             }
         };
 
         connect();
-
         return () => {
             isManualClose = true;
-
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-            }
-
-            if (ws) {
-                ws.close();
-            }
-
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            ws?.close();
             wsRef.current = null;
         };
-    }, [roboId]);
+    // fetchLocations is stable (useCallback with no deps that change),
+    // so including it here is safe and fixes the eslint exhaustive-deps warning
+    }, [roboId, fetchLocations, robotId]);
 
-    /* ================= DERIVED VALUES ================= */
+    /* ── Derived values ── */
     const defectRate =
         data.inspection.total > 0
             ? (data.inspection.defected / data.inspection.total) * 100
             : 0;
-
     const successRate =
         data.inspection.total > 0
-            ? ((data.inspection.total - data.inspection.defected) /
-                  data.inspection.total) *
-              100
+            ? ((data.inspection.total - data.inspection.defected) / data.inspection.total) * 100
             : 0;
+    const isAutonomous = navigationMode === "autonomous";
 
-    /* ================= LOADING STATE ================= */
+    const getFilterLabel = () => {
+        switch (currentFilter.filter_type) {
+            case "day":   return `Day: ${currentFilter.date}`;
+            case "week":  return `Week of ${currentFilter.date}`;
+            case "month": return `Month of ${currentFilter.date}`;
+            case "range": return `${currentFilter.start_date} – ${currentFilter.end_date}`;
+            default:      return "All Time";
+        }
+    };
+
+    /* ── Loading / error states ── */
     if (loading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center">
                 <div className="text-center">
                     <Loader2 className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
-                    <p className="text-slate-600 text-lg">
-                        Loading robot data...
-                    </p>
+                    <p className="text-slate-600 text-lg">Loading robot data...</p>
                 </div>
             </div>
         );
     }
 
-    /* ================= ERROR STATE ================= */
     if (error) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center">
                 <div className="text-center">
                     <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-                    <p className="text-slate-800 text-lg font-semibold mb-2">
-                        Error Loading Dashboard
-                    </p>
+                    <p className="text-slate-800 text-lg font-semibold mb-2">Error Loading Dashboard</p>
                     <p className="text-slate-600">{error}</p>
                     <button
                         onClick={() => window.location.reload()}
@@ -977,299 +849,73 @@ const Dashboard: React.FC = () => {
         );
     }
 
-    const getFilterLabel = () => {
-        switch (currentFilter.filter_type) {
-            case "day":
-                return `Day: ${currentFilter.date}`;
-            case "week":
-                return `Week of ${currentFilter.date}`;
-            case "month":
-                return `Month of ${currentFilter.date}`;
-            case "range":
-                return `${currentFilter.start_date} - ${currentFilter.end_date}`;
-            default:
-                return "All Time";
-        }
-    };
-
-    const isAutonomous = navigationMode === "autonomous";
-
+    /* ================================================================
+       RENDER
+       ================================================================ */
     return (
-        <div className="bg-gradient-to-br from-slate-50 to-white text-slate-800 p-6 md:p-6 font-sans w-full">
+        <div className="bg-gradient-to-br from-slate-50 to-white text-slate-800 p-6 font-sans w-full">
             <FilterModal
                 isOpen={showFilterModal}
                 onClose={() => setShowFilterModal(false)}
                 onApply={setCurrentFilter}
                 currentFilter={currentFilter}
             />
-
             <MapNotUploadedPopup
                 isOpen={showMapNotUploadedPopup}
                 onClose={() => setShowMapNotUploadedPopup(false)}
             />
-
             <LowBatteryWarningPopup
                 isOpen={showLowBatteryPopup}
                 onClose={handleLowBatteryClose}
                 batteryLevel={data.battery.level}
-                minimumThreshold={robotData?.minimum_battery_charge || 20}
+                minimumThreshold={robotData?.minimum_battery_charge ?? 20}
             />
 
-            <header className="mb-4">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-gray-100 px-3 py-3 rounded-2xl">
-                    <div>
-                        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight flex items-center gap-3">
-                            <Cpu className="text-slate-700" size={28} />
-                            <span className="bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
-                                Robotic Inspection Dashboard
-                            </span>
-                        </h1>
-                        <p className="text-slate-500 text-[17px] mt-1 ml-10 font-light">
-                            Robot ID: {robotData?.name}
-                        </p>
-                    </div>
-                    <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 w-full lg:w-auto">
-                        {/* WebSocket Connection Status */}
-                        <div
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${
-                                wsConnected
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "bg-rose-50 text-rose-700 border-rose-200"
-                            }`}
-                        >
-                            <div
-                                className={`w-2 h-2 rounded-full ${
-                                    wsConnected
-                                        ? "bg-emerald-500 animate-pulse"
-                                        : "bg-rose-500"
-                                }`}
-                            ></div>
-                            <span>
-                                {wsConnected ? "Connected" : "Disconnected"}
-                            </span>
-                        </div>
+            <RobotDashboardHeader
+                title="Robotic Inspection Dashboard"
+                subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
+                robotData={robotData}
+                battery={data.battery}
+                robotStatus={data.robotStatus}
+                wsConnected={wsConnected}
+                time={time}
+            />
 
-                        {/* Robot Status Indicators */}
-                        <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm w-full lg:w-auto">
-                            <div className="flex items-center gap-2">
-                                <div className="relative">
-                                    <Disc
-                                        className={`w-5 h-5 ${
-                                            data.robotStatus.break_status
-                                                ? "text-rose-500"
-                                                : "text-slate-400"
-                                        }`}
-                                    />
-                                    {data.robotStatus.break_status && (
-                                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping"></span>
-                                    )}
-                                </div>
-                                <span
-                                    className={`text-xs font-medium ${
-                                        data.robotStatus.break_status
-                                            ? "text-rose-600"
-                                            : "text-slate-500"
-                                    }`}
-                                >
-                                    Brake
-                                </span>
-                            </div>
-
-                            <div className="w-px h-6 bg-slate-200"></div>
-
-                            <div className="flex items-center gap-2">
-                                <div className="relative">
-                                    <AlertCircle
-                                        className={`w-5 h-5 ${
-                                            data.robotStatus.emergency_status
-                                                ? "text-red-600"
-                                                : "text-slate-400"
-                                        }`}
-                                    />
-                                    {data.robotStatus.emergency_status && (
-                                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-600 rounded-full animate-ping"></span>
-                                    )}
-                                </div>
-                                <span
-                                    className={`text-xs font-medium ${
-                                        data.robotStatus.emergency_status
-                                            ? "text-red-700"
-                                            : "text-slate-500"
-                                    }`}
-                                >
-                                    Emergency
-                                </span>
-                            </div>
-
-                            <div className="w-px h-6 bg-slate-200"></div>
-
-                            <div className="flex items-center gap-2">
-                                <div className="relative">
-                                    <Move
-                                        className={`w-5 h-5 ${
-                                            data.robotStatus.Arm_moving
-                                                ? "text-blue-500 animate-pulse"
-                                                : "text-slate-400"
-                                        }`}
-                                    />
-                                    {data.robotStatus.Arm_moving && (
-                                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
-                                    )}
-                                </div>
-                                <span
-                                    className={`text-xs font-medium ${
-                                        data.robotStatus.Arm_moving
-                                            ? "text-blue-600"
-                                            : "text-slate-500"
-                                    }`}
-                                >
-                                    Arm Moving
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Date and Time */}
-                        <div className="text-right w-full lg:w-auto">
-                            <div className="flex items-center gap-2 mb-1">
-                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                <div className="text-sm font-semibold text-slate-800">
-                                    {new Date().toLocaleDateString("en-US", {
-                                        weekday: "short",
-                                        month: "short",
-                                        day: "numeric",
-                                        year: "numeric",
-                                    })}
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                <div className="text-xs font-medium text-slate-600 bg-slate-50/80 px-2 py-0.5 rounded border border-slate-200/50">
-                                    {time}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <main className="flex flex-col lg:flex-row gap-6">
-                {/* Left Column - Defects & Schedules (60%) */}
+            <main className="flex flex-col lg:flex-row gap-6 mt-6">
+                {/* ── LEFT COLUMN (60%) ── */}
                 <div className="lg:w-3/5 space-y-6">
-                    {/* Defect Analysis (Inspection Summary) */}
+                    {/* Defect Analysis */}
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-2 gap-4">
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
                             <h2 className="text-xl font-semibold flex items-center gap-3">
-                                <BarChart3
-                                    className="text-amber-500/80"
-                                    size={24}
-                                />
-                                <span className="text-slate-800">
-                                    Defect Analysis
-                                </span>
+                                <BarChart3 className="text-amber-500/80" size={24} />
+                                <span className="text-slate-800">Defect Analysis</span>
                             </h2>
-
-                            <div className="flex items-center gap-3">
-                                <div className="px-3 py-1.5 bg-slate-50 border-slate-100 rounded-lg text-xs font-medium border">
-                                    <span className="text-slate-600">
-                                        Success:{" "}
-                                    </span>
-                                    <span className="text-emerald-600 font-semibold">
-                                        {successRate.toFixed(1)}%
-                                    </span>
-                                </div>
+                            <div className="px-3 py-1.5 bg-slate-50 border-slate-100 rounded-lg text-xs font-medium border">
+                                <span className="text-slate-600">Success: </span>
+                                <span className="text-emerald-600 font-semibold">
+                                    {successRate.toFixed(1)}%
+                                </span>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                                <div className="flex justify-between">
-                                    <h3 className="text-xs uppercase text-slate-600">
-                                        Total Scanned
-                                    </h3>
-                                    <HardDrive
-                                        size={18}
-                                        className="text-blue-500"
-                                    />
+                            {[
+                                { label: "Total Scanned", value: data.inspection.total,                icon: <HardDrive   size={18} className="text-blue-500"    />, bg: "bg-slate-50",   border: "border-slate-100",   text: "text-slate-900"   },
+                                { label: "Defected",      value: data.inspection.defected,             icon: <AlertTriangle size={18} className="text-rose-500"  />, bg: "bg-rose-50",    border: "border-rose-100",    text: "text-rose-700"    },
+                                { label: "Non-Defected",  value: data.inspection.non_defected,         icon: <CheckCircle size={18} className="text-emerald-500"  />, bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-700" },
+                                { label: "Approved",      value: data.inspection.approved,             icon: <CheckCheck  size={18} className="text-green-500"    />, bg: "bg-green-50",   border: "border-green-100",   text: "text-green-700"   },
+                                { label: "Verified",      value: data.inspection.human_verified,       icon: <CheckCircle size={18} className="text-blue-500"     />, bg: "bg-blue-50",    border: "border-blue-100",    text: "text-blue-700"    },
+                                { label: "Pending",       value: data.inspection.pending_verification, icon: <Clock       size={18} className="text-amber-500"    />, bg: "bg-amber-50",   border: "border-amber-100",   text: "text-amber-700"   },
+                            ].map(({ label, value, icon, bg, border, text }) => (
+                                <div key={label} className={`${bg} p-4 rounded-lg border ${border}`}>
+                                    <div className="flex justify-between">
+                                        <h3 className="text-xs uppercase text-slate-600">{label}</h3>
+                                        {icon}
+                                    </div>
+                                    <div className={`text-2xl font-bold mt-2 ${text}`}>{value}</div>
                                 </div>
-                                <div className="text-2xl font-bold mt-2">
-                                    {data.inspection.total}
-                                </div>
-                            </div>
-
-                            <div className="bg-rose-50 p-4 rounded-lg border border-rose-100">
-                                <div className="flex justify-between">
-                                    <h3 className="text-xs uppercase text-slate-600">
-                                        Defected
-                                    </h3>
-                                    <AlertTriangle
-                                        size={18}
-                                        className="text-rose-500"
-                                    />
-                                </div>
-                                <div className="text-2xl font-bold mt-2 text-rose-700">
-                                    {data.inspection.defected}
-                                </div>
-                            </div>
-
-                            <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
-                                <div className="flex justify-between">
-                                    <h3 className="text-xs uppercase text-slate-600">
-                                        Non-Defected
-                                    </h3>
-                                    <CheckCircle
-                                        size={18}
-                                        className="text-emerald-500"
-                                    />
-                                </div>
-                                <div className="text-2xl font-bold mt-2 text-emerald-700">
-                                    {data.inspection.non_defected}
-                                </div>
-                            </div>
-
-                            <div className="bg-green-50 p-4 rounded-lg border border-green-100">
-                                <div className="flex justify-between">
-                                    <h3 className="text-xs uppercase text-slate-600">
-                                        Approved
-                                    </h3>
-                                    <CheckCheck
-                                        size={18}
-                                        className="text-green-500"
-                                    />
-                                </div>
-                                <div className="text-2xl font-bold mt-2 text-green-700">
-                                    {data.inspection.approved}
-                                </div>
-                            </div>
-
-                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                                <div className="flex justify-between">
-                                    <h3 className="text-xs uppercase text-slate-600">
-                                        Verified
-                                    </h3>
-                                    <CheckCircle
-                                        size={18}
-                                        className="text-blue-500"
-                                    />
-                                </div>
-                                <div className="text-2xl font-bold mt-2 text-blue-700">
-                                    {data.inspection.human_verified}
-                                </div>
-                            </div>
-
-                            <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
-                                <div className="flex justify-between">
-                                    <h3 className="text-xs uppercase text-slate-600">
-                                        Pending
-                                    </h3>
-                                    <Clock
-                                        size={18}
-                                        className="text-amber-500"
-                                    />
-                                </div>
-                                <div className="text-2xl font-bold mt-2 text-amber-700">
-                                    {data.inspection.pending_verification}
-                                </div>
-                            </div>
+                            ))}
                         </div>
 
                         <div className="mt-6">
@@ -1277,12 +923,10 @@ const Dashboard: React.FC = () => {
                                 <div>
                                     <h3 className="font-medium">Defect Rate</h3>
                                     <p className="text-sm text-slate-500">
-                                        {defectRate.toFixed(2)}% of scanned
-                                        items have defects
+                                        {defectRate.toFixed(2)}% of scanned items have defects
                                     </p>
                                 </div>
                             </div>
-
                             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                     className="h-full bg-gradient-to-r from-rose-400 to-amber-400"
@@ -1292,28 +936,21 @@ const Dashboard: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Go to Schedules Button */}
+                    {/* Go to Schedules */}
                     <div className="group cursor-pointer p-6 bg-gradient-to-br from-white to-gray-50 rounded-2xl border border-gray-100 shadow-sm transition-all duration-300">
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                             <div className="space-y-1">
-                                <h3 className="text-2xl font-bold text-gray-900">
-                                    Schedule Dashboard
-                                </h3>
-                                <p className="text-gray-600 lg:max-w-full">
-                                    View detailed schedule information and
-                                    inspection results with advanced filtering
-                                    options.
+                                <h3 className="text-2xl font-bold text-gray-900">Schedule Dashboard</h3>
+                                <p className="text-gray-600">
+                                    View detailed schedule information and inspection results with advanced filtering options.
                                 </p>
                             </div>
-
                             <div className="relative inline-flex">
                                 <a
-                                    href={`/schedule?robot_id=${robotId}&filter_type=${currentFilter.filter_type}&date=${currentFilter.date || ""}&start_date=${currentFilter.start_date || ""}&end_date=${currentFilter.end_date || ""}`}
+                                    href={`/schedule?robot_id=${robotId}&filter_type=${currentFilter.filter_type}&date=${currentFilter.date ?? ""}&start_date=${currentFilter.start_date ?? ""}&end_date=${currentFilter.end_date ?? ""}`}
                                     className="relative z-10 flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 group/btn hover:shadow-2xl"
                                 >
-                                    <span className="tracking-tight">
-                                        Go to Schedules
-                                    </span>
+                                    <span className="tracking-tight">Go to Schedules</span>
                                     <svg
                                         className="w-5 h-5 transition-transform duration-300 group-hover/btn:translate-x-1"
                                         fill="none"
@@ -1328,8 +965,7 @@ const Dashboard: React.FC = () => {
                                         />
                                     </svg>
                                 </a>
-
-                                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 via-emerald-300 to-emerald-400 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-500 animate-pulse-slow"></div>
+                                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 via-emerald-300 to-emerald-400 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-500"></div>
                             </div>
                         </div>
                     </div>
@@ -1338,13 +974,8 @@ const Dashboard: React.FC = () => {
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
                             <h2 className="text-xl font-semibold flex items-center gap-3">
-                                <CalendarCheck
-                                    className="text-emerald-500/80"
-                                    size={24}
-                                />
-                                <span className="text-slate-800">
-                                    Schedule Management
-                                </span>
+                                <CalendarCheck className="text-emerald-500/80" size={24} />
+                                <span className="text-slate-800">Schedule Management</span>
                             </h2>
                             <button
                                 onClick={() => setShowFilterModal(true)}
@@ -1356,75 +987,27 @@ const Dashboard: React.FC = () => {
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div className="bg-slate-50/70 p-4 rounded-lg border border-slate-200/50">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-slate-600 text-xs font-medium uppercase">
-                                        Total
-                                    </h3>
-                                    <CalendarCheck
-                                        className="text-blue-500/80"
-                                        size={18}
-                                    />
+                            {[
+                                { label: "Total",      value: data.schedules.total,      icon: <CalendarCheck className="text-blue-500/80"    size={18} />, bg: "bg-slate-50/70",   border: "border-slate-200/50",   text: "text-slate-900"   },
+                                { label: "Scheduled",  value: data.schedules.scheduled,  icon: <Calendar      className="text-blue-600/80"    size={18} />, bg: "bg-blue-50/50",    border: "border-blue-200/30",    text: "text-blue-700"    },
+                                { label: "Processing", value: data.schedules.processing, icon: <Clock        className="text-amber-600/80"   size={18} />, bg: "bg-amber-50/50",   border: "border-amber-200/30",   text: "text-amber-700"   },
+                                { label: "Completed",  value: data.schedules.completed,  icon: <CheckCircle  className="text-emerald-600/80" size={18} />, bg: "bg-emerald-50/50", border: "border-emerald-200/30", text: "text-emerald-700" },
+                            ].map(({ label, value, icon, bg, border, text }) => (
+                                <div key={label} className={`${bg} p-4 rounded-lg border ${border}`}>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-slate-600 text-xs font-medium uppercase">{label}</h3>
+                                        {icon}
+                                    </div>
+                                    <div className={`text-2xl font-bold mt-2 ${text}`}>{value}</div>
                                 </div>
-                                <div className="text-2xl font-bold mt-2 text-slate-900">
-                                    {data.schedules.total}
-                                </div>
-                            </div>
-
-                            <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-200/30">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-slate-600 text-xs font-medium uppercase">
-                                        Scheduled
-                                    </h3>
-                                    <Calendar
-                                        className="text-blue-600/80"
-                                        size={18}
-                                    />
-                                </div>
-                                <div className="text-2xl font-bold mt-2 text-blue-700">
-                                    {data.schedules.scheduled}
-                                </div>
-                            </div>
-
-                            <div className="bg-amber-50/50 p-4 rounded-lg border border-amber-200/30">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-slate-600 text-xs font-medium uppercase">
-                                        Processing
-                                    </h3>
-                                    <Clock
-                                        className="text-amber-600/80"
-                                        size={18}
-                                    />
-                                </div>
-                                <div className="text-2xl font-bold mt-2 text-amber-700">
-                                    {data.schedules.processing}
-                                </div>
-                            </div>
-
-                            <div className="bg-emerald-50/50 p-4 rounded-lg border border-emerald-200/30">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="text-slate-600 text-xs font-medium uppercase">
-                                        Completed
-                                    </h3>
-                                    <CheckCircle
-                                        className="text-emerald-600/80"
-                                        size={18}
-                                    />
-                                </div>
-                                <div className="text-2xl font-bold mt-2 text-emerald-700">
-                                    {data.schedules.completed}
-                                </div>
-                            </div>
+                            ))}
                         </div>
 
-                        <div className=" pt-6 border-t border-slate-200/50">
+                        <div className="pt-6 border-t border-slate-200/50">
                             <div className="flex flex-col md:flex-row justify-between mb-2 gap-2">
-                                <h3 className="font-medium text-slate-800">
-                                    Schedule Progress
-                                </h3>
+                                <h3 className="font-medium text-slate-800">Schedule Progress</h3>
                                 <span className="text-sm text-slate-500">
-                                    {data.schedules.completed} of{" "}
-                                    {data.schedules.total} completed
+                                    {data.schedules.completed} of {data.schedules.total} completed
                                 </span>
                             </div>
                             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -1433,27 +1016,21 @@ const Dashboard: React.FC = () => {
                                     style={{
                                         width: `${data.schedules.total > 0 ? (data.schedules.completed / data.schedules.total) * 100 : 0}%`,
                                     }}
-                                ></div>
+                                />
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Right Column - Battery & Camera Status (40%) */}
+                {/* ── RIGHT COLUMN (40%) ── */}
                 <div className="lg:w-2/5 space-y-6">
-                    {/* Robot Status - Split into two columns */}
                     <div className="grid grid-cols-2 gap-6">
-                        {/* Robot Battery View */}
+                        {/* Battery */}
                         <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                             <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
                                 <h2 className="text-xl font-semibold flex items-center gap-3">
-                                    <Battery
-                                        className="text-emerald-500/80"
-                                        size={24}
-                                    />
-                                    <span className="text-slate-800">
-                                        Robot Battery
-                                    </span>
+                                    <Battery className="text-emerald-500/80" size={24} />
+                                    <span className="text-slate-800">Robot Battery</span>
                                 </h2>
                                 <div
                                     className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -1464,110 +1041,77 @@ const Dashboard: React.FC = () => {
                                               : "bg-blue-50 text-blue-700 border border-blue-200"
                                     }`}
                                 >
-                                    {data.battery.status
-                                        .charAt(0)
-                                        .toUpperCase() +
-                                        data.battery.status.slice(1)}
+                                    {data.battery.status.charAt(0).toUpperCase() + data.battery.status.slice(1)}
                                 </div>
                             </div>
 
-                            <div>
-                                <div className="text-center mb-6">
-                                    <div className="text-4xl font-bold mb-1.5 text-slate-900">
-                                        {data.battery.level.toFixed(1)}%
+                            <div className="text-center mb-6">
+                                <div className="text-4xl font-bold mb-1.5 text-slate-900">
+                                    {data.battery.level.toFixed(1)}%
+                                </div>
+                            </div>
+
+                            <div className="h-6 bg-slate-100 rounded-full overflow-hidden mb-2">
+                                <div
+                                    className={`h-full rounded-full ${
+                                        data.battery.level > 50
+                                            ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
+                                            : data.battery.level > 20
+                                              ? "bg-gradient-to-r from-amber-500 to-amber-400"
+                                              : "bg-gradient-to-r from-rose-500 to-rose-400"
+                                    }`}
+                                    style={{ width: `${data.battery.level}%` }}
+                                />
+                            </div>
+                            <div className="flex justify-between text-xs text-slate-400 mb-6">
+                                <span>0%</span>
+                                <span>50%</span>
+                                <span>100%</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/30">
+                                    <div className="text-slate-600 text-xs font-medium mb-1">DOD</div>
+                                    <div className="text-lg font-bold text-slate-900">
+                                        {data.battery.dod ? `${data.battery.dod.toFixed(0)}%` : "N/A"}
                                     </div>
                                 </div>
-
-                                <div className="mb-6">
-                                    <div className="h-6 bg-slate-100 rounded-full overflow-hidden mb-2">
-                                        <div
-                                            className={`h-full rounded-full ${
-                                                data.battery.level > 50
-                                                    ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
-                                                    : data.battery.level > 20
-                                                      ? "bg-gradient-to-r from-amber-500 to-amber-400"
-                                                      : "bg-gradient-to-r from-rose-500 to-rose-400"
-                                            }`}
-                                            style={{
-                                                width: `${data.battery.level}%`,
-                                            }}
-                                        ></div>
-                                    </div>
-
-                                    <div className="flex justify-between text-xs text-slate-400 mb-6">
-                                        <span>0%</span>
-                                        <span>50%</span>
-                                        <span>100%</span>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/30">
-                                            <div className="text-slate-600 text-xs font-medium mb-1">
-                                                DOD
-                                            </div>
-                                            <div className="text-lg font-bold text-slate-900">
-                                                {data.battery.dod
-                                                    ? `${data.battery.dod.toFixed(0)}%`
-                                                    : "N/A"}
-                                            </div>
-                                        </div>
-                                        <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/30">
-                                            <div className="text-slate-600 text-xs font-medium mb-1">
-                                                Voltage
-                                            </div>
-                                            <div className="text-lg font-bold text-slate-900">
-                                                {data.battery.voltage
-                                                    ? `${data.battery.voltage.toFixed(1)}V`
-                                                    : "N/A"}
-                                            </div>
-                                        </div>
+                                <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/30">
+                                    <div className="text-slate-600 text-xs font-medium mb-1">Voltage</div>
+                                    <div className="text-lg font-bold text-slate-900">
+                                        {data.battery.voltage ? `${data.battery.voltage.toFixed(1)}V` : "N/A"}
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Robot Location with Toggle */}
+                        {/* Robot Location */}
                         <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-xl font-semibold flex items-center gap-2">
-                                    <MapPin
-                                        className="text-blue-500/80"
-                                        size={24}
-                                    />
-                                    <span className="text-slate-800">
-                                        Robot Location
-                                    </span>
+                                    <MapPin className="text-blue-500/80" size={24} />
+                                    <span className="text-slate-800">Robot Location</span>
                                 </h2>
+                                {/* ── Loading spinner shown while fetching locations ── */}
+                                {locationLoading && (
+                                    <div className="flex items-center gap-1.5 text-xs text-blue-600">
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Updating...</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Stationary ←→ Autonomous toggle */}
                             <div className="flex items-center justify-center gap-3 mb-3">
-                                <span
-                                    className={`text-xs font-semibold transition-colors duration-300 ${
-                                        !isAutonomous
-                                            ? "text-slate-800"
-                                            : "text-slate-400"
-                                    }`}
-                                >
+                                <span className={`text-xs font-semibold transition-colors duration-300 ${!isAutonomous ? "text-slate-800" : "text-slate-400"}`}>
                                     Stationary
                                 </span>
-
                                 <button
                                     type="button"
                                     onClick={handleToggleNavigation}
-                                    disabled={
-                                        navPatchLoading || !isAutonomousReady
-                                    }
-                                    className={`relative w-14 h-7 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors duration-300 ${
-                                        !isAutonomousReady
-                                            ? "opacity-50 cursor-not-allowed"
-                                            : "cursor-pointer"
-                                    } ${navPatchLoading ? "cursor-wait" : ""}`}
-                                    style={{
-                                        backgroundColor: isAutonomous
-                                            ? "#2563eb"
-                                            : "#cbd5e1",
-                                    }}
+                                    disabled={navPatchLoading || !isAutonomousReady}
+                                    className={`relative w-14 h-7 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors duration-300 ${!isAutonomousReady ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${navPatchLoading ? "cursor-wait" : ""}`}
+                                    style={{ backgroundColor: isAutonomous ? "#2563eb" : "#cbd5e1" }}
                                     aria-label="Toggle navigation mode"
                                 >
                                     {navPatchLoading && (
@@ -1575,26 +1119,15 @@ const Dashboard: React.FC = () => {
                                             <Loader2 className="w-4 h-4 animate-spin text-white" />
                                         </span>
                                     )}
-
                                     <span
-                                        className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md
-                                            transition-transform duration-300 ease-in-out
-                                            ${isAutonomous ? "translate-x-7" : "translate-x-0"}`}
+                                        className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out ${isAutonomous ? "translate-x-7" : "translate-x-0"}`}
                                     />
                                 </button>
-
-                                <span
-                                    className={`text-xs font-semibold transition-colors duration-300 ${
-                                        isAutonomous
-                                            ? "text-blue-700"
-                                            : "text-slate-400"
-                                    }`}
-                                >
+                                <span className={`text-xs font-semibold transition-colors duration-300 ${isAutonomous ? "text-blue-700" : "text-slate-400"}`}>
                                     Autonomous
                                 </span>
                             </div>
 
-                            {/* Autonomous ready status */}
                             {!isAutonomousReady && (
                                 <div className="flex items-center justify-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1602,7 +1135,6 @@ const Dashboard: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* PATCH error toast */}
                             {navPatchError && (
                                 <div className="flex items-center gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1616,55 +1148,30 @@ const Dashboard: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Autonomous content */}
-                            <div
-                                className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                                    isAutonomous
-                                        ? "max-h-[600px] opacity-100"
-                                        : "max-h-0 opacity-0"
-                                }`}
-                            >
-                                {/* navigation_style pills */}
+                            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isAutonomous ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}>
                                 <div className="flex gap-2 mb-4">
                                     {(
                                         [
-                                            ["free", "Free"],
-                                            ["strict", "Strict"],
-                                            [
-                                                "strict_with_autonomous",
-                                                "Strict Auto",
-                                            ],
+                                            ["free",                   "Free"       ],
+                                            ["strict",                 "Strict"     ],
+                                            ["strict_with_autonomous", "Strict Auto"],
                                         ] as const
                                     ).map(([value, label]) => {
-                                        const isStrictMode = value !== "free";
-                                        const buttonDisabled =
-                                            isStrictMode && !isModeActive;
-
+                                        const disabled = value !== "free" && !isModeActive;
                                         return (
                                             <button
                                                 key={value}
                                                 type="button"
-                                                onClick={() =>
-                                                    handleStyleChange(value)
-                                                }
-                                                disabled={
-                                                    navPatchLoading ||
-                                                    buttonDisabled
-                                                }
-                                                title={
-                                                    buttonDisabled
-                                                        ? "Waiting for mode activation"
-                                                        : ""
-                                                }
-                                                className={`flex-1 text-xs font-semibold px-2 py-2 rounded-lg border transition-all duration-200
-                                                    ${
-                                                        navigationStyle ===
-                                                        value
-                                                            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                                                            : buttonDisabled
-                                                              ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50"
-                                                              : "bg-slate-50 text-slate-600 border-slate-200 hover:border-blue-300 hover:bg-blue-50"
-                                                    }`}
+                                                onClick={() => handleStyleChange(value)}
+                                                disabled={navPatchLoading || disabled}
+                                                title={disabled ? "Waiting for mode activation" : ""}
+                                                className={`flex-1 text-xs font-semibold px-2 py-2 rounded-lg border transition-all duration-200 ${
+                                                    navigationStyle === value
+                                                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                                        : disabled
+                                                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-50"
+                                                          : "bg-slate-50 text-slate-600 border-slate-200 hover:border-blue-300 hover:bg-blue-50"
+                                                }`}
                                             >
                                                 {label}
                                             </button>
@@ -1673,58 +1180,46 @@ const Dashboard: React.FC = () => {
                                 </div>
 
                                 <div className="flex items-center justify-between mb-2">
-                                    <h3 className="font-medium text-slate-800 text-sm">
-                                        Recent Locations
-                                    </h3>
-                                    {data.locations &&
-                                        data.locations.length > 0 && (
-                                            <span className="text-xs text-slate-500">
-                                                Map: {data.mapName}
-                                            </span>
-                                        )}
+                                    <h3 className="font-medium text-slate-800 text-sm">Recent Locations</h3>
+                                    {data.locations && data.locations.length > 0 && (
+                                        <span className="text-xs text-slate-500">Map: {data.mapName}</span>
+                                    )}
                                 </div>
 
-                                <div className="space-y-2 h-44 overflow-y-auto scroll-hide">
-                                    {data.locations &&
-                                    data.locations.length > 0 ? (
-                                        data.locations.map(
-                                            (location, index) => (
-                                                <div
-                                                    key={index}
-                                                    onClick={() =>
-                                                        handleLocationClick(
-                                                            location,
-                                                        )
-                                                    }
-                                                    className="flex items-center gap-3 px-3 py-3 rounded-lg bg-slate-50/80 text-slate-700 text-sm hover:bg-slate-100 transition-colors border border-slate-200/50 cursor-pointer active:bg-slate-200"
-                                                >
-                                                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                                                    <span>{location}</span>
-                                                </div>
-                                            ),
-                                        )
+                                <div className="space-y-2 h-44 overflow-y-auto">
+                                    {locationLoading ? (
+                                        /* ── Skeleton while locations are being refreshed ── */
+                                        <div className="flex flex-col items-center justify-center h-full py-6 text-slate-400">
+                                            <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-400" />
+                                            <p className="text-sm">Loading locations...</p>
+                                        </div>
+                                    ) : data.locations && data.locations.length > 0 ? (
+                                        data.locations.map((location, index) => (
+                                            <div
+                                                key={index}
+                                                onClick={() => handleLocationClick(location)}
+                                                className="flex items-center gap-3 px-3 py-3 rounded-lg bg-slate-50/80 text-slate-700 text-sm hover:bg-slate-100 transition-colors border border-slate-200/50 cursor-pointer active:bg-slate-200"
+                                            >
+                                                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                                                <span>{location}</span>
+                                            </div>
+                                        ))
                                     ) : (
                                         <div className="h-full flex flex-col items-center justify-center py-6 text-slate-400">
                                             <MapPin className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                                            <p className="text-sm">
-                                                No locations available
-                                            </p>
+                                            <p className="text-sm">No locations available</p>
                                             <p className="text-xs text-slate-500 mt-0.5">
-                                                Robot location data will appear
-                                                here
+                                                Robot location data will appear here
                                             </p>
                                         </div>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Stationary placeholder */}
                             {!isAutonomous && (
                                 <div className="flex flex-col items-center justify-center py-10 text-slate-400">
                                     <Navigation className="w-10 h-10 mx-auto mb-2 opacity-25" />
-                                    <p className="text-sm font-medium">
-                                        Stationary Mode
-                                    </p>
+                                    <p className="text-sm font-medium">Stationary Mode</p>
                                     <p className="text-xs text-slate-500 mt-0.5">
                                         Enable autonomous to see locations
                                     </p>
@@ -1734,263 +1229,76 @@ const Dashboard: React.FC = () => {
                     </div>
 
                     {/* Camera Status */}
-                    <div className=" bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-2 gap-4">
-                            <h2 className="text-xl font-semibold flex items-center gap-3">
-                                <Camera
-                                    className="text-violet-500/80"
-                                    size={20}
-                                />
-                                <span className="text-slate-800">
-                                    Camera Status
-                                </span>
-                            </h2>
-                        </div>
+                    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+                        <h2 className="text-xl font-semibold flex items-center gap-3 mb-4">
+                            <Camera className="text-violet-500/80" size={20} />
+                            <span className="text-slate-800">Camera Status</span>
+                        </h2>
 
                         <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-200/30">
-                                <div className="text-slate-700 text-base font-semibold mb-0.5">
-                                    Left Camera
-                                </div>
-
-                                <div className="flex items-center gap-1.5">
-                                    <div
-                                        className={`w-2 h-2 rounded-full ${
-                                            data.cameras.left.connected
-                                                ? "bg-emerald-500"
-                                                : "bg-red-500"
-                                        }`}
-                                    />
-                                    <span
-                                        className={`text-xs font-medium ${
-                                            data.cameras.left.connected
-                                                ? "text-emerald-600"
-                                                : "text-red-600"
-                                        }`}
-                                    >
-                                        {data.cameras.left.connected
-                                            ? "Connected"
-                                            : "Disconnected"}
-                                    </span>
-                                </div>
-
-                                <div className="mt-2 space-y-1">
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            USB Speed:
-                                        </span>
-                                        <span className="font-medium text-slate-900">
-                                            {data.cameras.left.usb_speed ||
-                                                "Unknown"}
-                                        </span>
+                            {(["left", "right"] as const).map((side) => {
+                                const cam = data.cameras[side];
+                                return (
+                                    <div key={side} className="bg-blue-50/50 p-3 rounded-lg border border-blue-200/30">
+                                        <div className="text-slate-700 text-base font-semibold mb-0.5 capitalize">
+                                            {side} Camera
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className={`w-2 h-2 rounded-full ${cam.connected ? "bg-emerald-500" : "bg-red-500"}`} />
+                                            <span className={`text-xs font-medium ${cam.connected ? "text-emerald-600" : "text-red-600"}`}>
+                                                {cam.connected ? "Connected" : "Disconnected"}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 space-y-1">
+                                            {[
+                                                { label: "USB Speed", value: cam.usb_speed || "Unknown", conditional: false },
+                                                { label: "Profiles",  value: !cam.connected ? "Unknown" : cam.profiles_ok ? "OK" : "Issue", conditional: true, ok: cam.profiles_ok },
+                                                { label: "Frames",    value: !cam.connected ? "Unknown" : cam.frames_ok   ? "OK" : "Issue", conditional: true, ok: cam.frames_ok   },
+                                            ].map(({ label, value, conditional, ok }) => (
+                                                <div key={label} className="flex justify-between text-xs">
+                                                    <span className="text-slate-500">{label}:</span>
+                                                    <span
+                                                        className={`font-medium ${
+                                                            !conditional
+                                                                ? "text-slate-900"
+                                                                : !cam.connected
+                                                                  ? "text-slate-400"
+                                                                  : ok
+                                                                    ? "text-emerald-600"
+                                                                    : "text-red-600"
+                                                        }`}
+                                                    >
+                                                        {value}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            Profiles:
-                                        </span>
-                                        <span
-                                            className={`font-medium ${
-                                                !data.cameras.left.connected
-                                                    ? "text-slate-400"
-                                                    : data.cameras.left
-                                                            .profiles_ok
-                                                      ? "text-emerald-600"
-                                                      : "text-red-600"
-                                            }`}
-                                        >
-                                            {!data.cameras.left.connected
-                                                ? "Unknown"
-                                                : data.cameras.left.profiles_ok
-                                                  ? "OK"
-                                                  : "Issue"}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            Frames:
-                                        </span>
-                                        <span
-                                            className={`font-medium ${
-                                                !data.cameras.left.connected
-                                                    ? "text-slate-400"
-                                                    : data.cameras.left
-                                                            .frames_ok
-                                                      ? "text-emerald-600"
-                                                      : "text-red-600"
-                                            }`}
-                                        >
-                                            {!data.cameras.left.connected
-                                                ? "Unknown"
-                                                : data.cameras.left.frames_ok
-                                                  ? "OK"
-                                                  : "Issue"}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-200/30">
-                                <div className="text-slate-700 text-base font-semibold mb-0.5">
-                                    Right Camera
-                                </div>
-
-                                <div className="flex items-center gap-1.5">
-                                    <div
-                                        className={`w-2 h-2 rounded-full ${
-                                            data.cameras.right.connected
-                                                ? "bg-emerald-500"
-                                                : "bg-red-500"
-                                        }`}
-                                    />
-                                    <span
-                                        className={`text-xs font-medium ${
-                                            data.cameras.right.connected
-                                                ? "text-emerald-600"
-                                                : "text-red-600"
-                                        }`}
-                                    >
-                                        {data.cameras.right.connected
-                                            ? "Connected"
-                                            : "Disconnected"}
-                                    </span>
-                                </div>
-
-                                <div className="mt-2 space-y-1">
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            USB Speed:
-                                        </span>
-                                        <span className="font-medium text-slate-900">
-                                            {data.cameras.right.usb_speed ||
-                                                "Unknown"}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            Profiles:
-                                        </span>
-                                        <span
-                                            className={`font-medium ${
-                                                !data.cameras.right.connected
-                                                    ? "text-slate-400"
-                                                    : data.cameras.right
-                                                            .profiles_ok
-                                                      ? "text-emerald-600"
-                                                      : "text-red-600"
-                                            }`}
-                                        >
-                                            {!data.cameras.right.connected
-                                                ? "Unknown"
-                                                : data.cameras.right.profiles_ok
-                                                  ? "OK"
-                                                  : "Issue"}
-                                        </span>
-                                    </div>
-
-                                    <div className="flex justify-between text-xs">
-                                        <span className="text-slate-500">
-                                            Frames:
-                                        </span>
-                                        <span
-                                            className={`font-medium ${
-                                                !data.cameras.right.connected
-                                                    ? "text-slate-400"
-                                                    : data.cameras.right
-                                                            .frames_ok
-                                                      ? "text-emerald-600"
-                                                      : "text-red-600"
-                                            }`}
-                                        >
-                                            {!data.cameras.right.connected
-                                                ? "Unknown"
-                                                : data.cameras.right.frames_ok
-                                                  ? "OK"
-                                                  : "Issue"}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
+                                );
+                            })}
                         </div>
 
-                        {/* CAN Status Section */}
-                        <div className="mt-2 pt-4">
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className="font-medium text-slate-800 flex items-center gap-2">
-                                    <Handshake
-                                        className=" text-indigo-500"
-                                        size={20}
-                                    />
-                                    Arm Status
-                                </h3>
-                            </div>
-
+                        {/* CAN / Arm Status */}
+                        <div className="mt-4 pt-4 border-t border-slate-100">
+                            <h3 className="font-medium text-slate-800 flex items-center gap-2 mb-3">
+                                <Handshake className="text-indigo-500" size={20} />
+                                Arm Status
+                            </h3>
                             <div className="grid grid-cols-2 gap-2">
-                                <div
-                                    className={`p-3 rounded-lg border transition-all ${
-                                        data.canStatus.can0
-                                            ? "bg-emerald-50/60 border-emerald-200/50"
-                                            : "bg-slate-50/60 border-slate-200/50"
-                                    }`}
-                                >
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-semibold text-slate-700">
-                                            CAN0
-                                        </span>
-                                        <div
-                                            className={`w-2 h-2 rounded-full ${
-                                                data.canStatus.can0
-                                                    ? "bg-emerald-500 animate-pulse"
-                                                    : "bg-slate-400"
-                                            }`}
-                                        ></div>
-                                    </div>
-                                    <span
-                                        className={`text-sm font-medium ${
-                                            data.canStatus.can0
-                                                ? "text-emerald-700"
-                                                : "text-slate-600"
-                                        }`}
+                                {(["can0", "can1"] as const).map((can) => (
+                                    <div
+                                        key={can}
+                                        className={`p-3 rounded-lg border transition-all ${data.canStatus[can] ? "bg-emerald-50/60 border-emerald-200/50" : "bg-slate-50/60 border-slate-200/50"}`}
                                     >
-                                        {data.canStatus.can0
-                                            ? "Online"
-                                            : "Offline"}
-                                    </span>
-                                </div>
-
-                                <div
-                                    className={`p-3 rounded-lg border transition-all ${
-                                        data.canStatus.can1
-                                            ? "bg-emerald-50/60 border-emerald-200/50"
-                                            : "bg-slate-50/60 border-slate-200/50"
-                                    }`}
-                                >
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-semibold text-slate-700">
-                                            CAN1
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-xs font-semibold text-slate-700 uppercase">{can}</span>
+                                            <div className={`w-2 h-2 rounded-full ${data.canStatus[can] ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                                        </div>
+                                        <span className={`text-sm font-medium ${data.canStatus[can] ? "text-emerald-700" : "text-slate-600"}`}>
+                                            {data.canStatus[can] ? "Online" : "Offline"}
                                         </span>
-                                        <div
-                                            className={`w-2 h-2 rounded-full ${
-                                                data.canStatus.can1
-                                                    ? "bg-emerald-500 animate-pulse"
-                                                    : "bg-slate-400"
-                                            }`}
-                                        ></div>
                                     </div>
-                                    <span
-                                        className={`text-sm font-medium ${
-                                            data.canStatus.can1
-                                                ? "text-emerald-700"
-                                                : "text-slate-600"
-                                        }`}
-                                    >
-                                        {data.canStatus.can1
-                                            ? "Online"
-                                            : "Offline"}
-                                    </span>
-                                </div>
+                                ))}
                             </div>
                         </div>
                     </div>

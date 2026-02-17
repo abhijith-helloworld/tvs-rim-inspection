@@ -12,7 +12,7 @@ import {
 
 const WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ||
-  "ws://192.168.0.224:8002/ws/robot_message/";
+  "ws://192.168.0.216:8002/ws/robot_message/";
 
 export default function SettingsPage() {
   const [connected, setConnected] = useState(false);
