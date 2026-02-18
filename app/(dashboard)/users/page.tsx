@@ -34,6 +34,8 @@ interface PaginatedResponse {
     };
 }
 
+const PAGE_SIZE = 10;
+
 export default function Page() {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
@@ -49,18 +51,16 @@ export default function Page() {
             setError(null);
 
             const url = `${API_BASE_URL}/accounts/users/?page=${page}`;
-
             const res = await fetchWithAuth(url);
             const json: PaginatedResponse = await res.json();
-
 
             if (json.results?.success && json.results.data) {
                 setUsers(json.results.data);
                 setTotalCount(json.count);
-                setTotalPages(Math.ceil(json.count));
+                // ✅ Fix: divide count by page size
+                setTotalPages(Math.ceil(json.count / PAGE_SIZE));
                 setCurrentPage(page);
             } else {
-                console.error("API returned success=false or no data:", json);
                 setError(json.results?.message || "Failed to fetch users");
             }
         } catch (err) {
@@ -160,19 +160,19 @@ export default function Page() {
                     </div>
                 </div>
             ) : (
-                <>
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                        <UsersTable
-                            users={users}
-                            setUsers={setUsers}
-                            currentPage={currentPage}
-                            totalPages={totalPages}
-                            onPageChange={handlePageChange}
-                            totalCount={totalCount}
-                        />
-                    </div>
-                </>
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <UsersTable
+                        users={users}
+                        setUsers={setUsers}
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        onPageChange={handlePageChange}
+                        totalCount={totalCount}
+                        pageSize={PAGE_SIZE}
+                    />
+                </div>
             )}
+
             <AddUserModal
                 isOpen={isAddUserModalOpen}
                 onClose={() => setIsAddUserModalOpen(false)}

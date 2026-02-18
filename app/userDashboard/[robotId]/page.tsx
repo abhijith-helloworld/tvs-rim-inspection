@@ -11,11 +11,9 @@ import {
     Clock,
     HardDrive,
     CalendarCheck,
-    Zap,
     Loader2,
     Camera,
     AlertCircle,
-    Move,
     Filter,
     CheckCheck,
     X,
@@ -69,22 +67,6 @@ interface CanStatus {
     can1: boolean;
 }
 
-interface ArmJoint {
-    id: number;
-    name: string;
-    position: number;
-    status: "normal" | "warning" | "error";
-}
-
-interface ArmStatus {
-    connected: boolean;
-    temperature: number;
-    position: { x: number; y: number; z: number };
-    velocity: number;
-    gripperStatus: "open" | "closed";
-    joints: ArmJoint[];
-}
-
 interface InspectionSummary {
     total: number;
     defected: number;
@@ -113,26 +95,18 @@ interface NavigationPayload {
     navigation_style?: "free" | "strict" | "strict_with_autonomous";
 }
 
-interface DashboardData {
-    inspection: InspectionSummary;
-    schedules: ScheduleSummary;
-    battery: BatteryStatus;
-    arm: ArmStatus;
-    cameras: { left: CameraStatus; right: CameraStatus };
-    locations?: string[];
-    mapName?: string;
-    robotStatus: RobotStatus;
-    canStatus: CanStatus;
-}
-
 /* ================================================================
-   DEFAULT VALUES
+   DEFAULT VALUES — restored after 3 s of WS silence per channel
    ================================================================ */
 
 const DEFAULT_BATTERY: BatteryStatus = {
     level: 0,
     status: "discharging",
     timeRemaining: "0h 0m",
+    voltage: 0,
+    current: 0,
+    power: 0,
+    dod: 0,
 };
 
 const DEFAULT_ROBOT_STATUS: RobotStatus = {
@@ -141,10 +115,90 @@ const DEFAULT_ROBOT_STATUS: RobotStatus = {
     Arm_moving: false,
 };
 
+const DEFAULT_CAN_STATUS: CanStatus = {
+    can0: false,
+    can1: false,
+};
+
+const DEFAULT_CAMERAS = {
+    left:  { connected: false, usb_speed: "", profiles_ok: false, frames_ok: false },
+    right: { connected: false, usb_speed: "", profiles_ok: false, frames_ok: false },
+};
+
+const DEFAULT_ARM_TEMPERATURE = 0;
+
+/** ms of WS silence before resetting a channel to its defaults */
+const WS_TIMEOUT_MS = 3000;
+
+/* ================================================================
+   useWsChannel — custom hook
+   - Holds the latest value for one WS event type
+   - Resets to defaultValue after WS_TIMEOUT_MS of silence
+   - Exposes isStale + hasEverReceived for badge / overlay rendering
+   ================================================================ */
+function useWsChannel<T>(defaultValue: T) {
+    const [value, setValue]                   = useState<T>(defaultValue);
+    const [isStale, setIsStale]               = useState(false);
+    const [hasEverReceived, setHasEverReceived] = useState(false);
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const update = useCallback((newValue: T) => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        setValue(newValue);
+        setIsStale(false);
+        setHasEverReceived(true);
+
+        timerRef.current = setTimeout(() => {
+            setIsStale(true);
+            setValue(defaultValue);          // ← reset to defaults
+        }, WS_TIMEOUT_MS);
+    // defaultValue is a stable constant object — intentionally excluded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+    return { value, isStale, hasEverReceived, update };
+}
+
+/* ================================================================
+   STALE BADGE — Live / Stale / No Signal
+   ================================================================ */
+const StaleBadge = ({
+    isStale,
+    hasEverReceived,
+}: {
+    isStale: boolean;
+    hasEverReceived: boolean;
+}) => {
+    if (!hasEverReceived) {
+        return (
+            <span className="flex items-center gap-1 text-xs text-slate-400 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                No Signal
+            </span>
+        );
+    }
+    if (isStale) {
+        return (
+            <span className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Stale
+            </span>
+        );
+    }
+    return (
+        <span className="flex items-center gap-1 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live
+        </span>
+    );
+};
+
+
 /* ================================================================
    FILTER MODAL
    ================================================================ */
-
 const FilterModal = ({
     isOpen,
     onClose,
@@ -156,26 +210,16 @@ const FilterModal = ({
     onApply: (filter: FilterData) => void;
     currentFilter: FilterData;
 }) => {
-    const [filterType, setFilterType] = useState<FilterData["filter_type"]>(
-        currentFilter.filter_type,
-    );
-    const [selectedDate, setSelectedDate] = useState(
-        currentFilter.date ?? new Date().toISOString().split("T")[0],
-    );
+    const [filterType, setFilterType] = useState<FilterData["filter_type"]>(currentFilter.filter_type);
+    const [selectedDate, setSelectedDate] = useState(currentFilter.date ?? new Date().toISOString().split("T")[0]);
     const [startDate, setStartDate] = useState(currentFilter.start_date ?? "");
-    const [endDate, setEndDate] = useState(currentFilter.end_date ?? "");
+    const [endDate, setEndDate]     = useState(currentFilter.end_date   ?? "");
 
     if (!isOpen) return null;
 
     const handleApply = () => {
-        const filter: FilterData = {
-            filter_type: filterType,
-            date: selectedDate,
-        };
-        if (filterType === "range") {
-            filter.start_date = startDate;
-            filter.end_date = endDate;
-        }
+        const filter: FilterData = { filter_type: filterType, date: selectedDate };
+        if (filterType === "range") { filter.start_date = startDate; filter.end_date = endDate; }
         onApply(filter);
         onClose();
     };
@@ -184,53 +228,39 @@ const FilterModal = ({
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl max-w-md w-full border border-gray-200">
                 <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                    <h3 className="text-xl font-semibold text-gray-900">
-                        Filter Schedules
-                    </h3>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
+                    <h3 className="text-xl font-semibold text-gray-900">Filter Schedules</h3>
+                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                         <X className="w-5 h-5 text-gray-500" />
                     </button>
                 </div>
 
                 <div className="p-6 space-y-6">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-3">
-                            Filter Type
-                        </label>
+                        <label className="block text-sm font-medium text-gray-700 mb-3">Filter Type</label>
                         <div className="grid grid-cols-2 gap-3">
-                            {(["day", "week", "month", "range"] as const).map(
-                                (type) => (
-                                    <button
-                                        key={type}
-                                        onClick={() => setFilterType(type)}
-                                        className={`px-4 py-2.5 rounded-lg font-medium transition-all ${
-                                            filterType === type
-                                                ? "bg-emerald-500 text-white shadow-sm"
-                                                : "bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
-                                        }`}
-                                    >
-                                        {type.charAt(0).toUpperCase() +
-                                            type.slice(1)}
-                                    </button>
-                                ),
-                            )}
+                            {(["day", "week", "month", "range"] as const).map((type) => (
+                                <button
+                                    key={type}
+                                    onClick={() => setFilterType(type)}
+                                    className={`px-4 py-2.5 rounded-lg font-medium transition-all ${
+                                        filterType === type
+                                            ? "bg-emerald-500 text-white shadow-sm"
+                                            : "bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200"
+                                    }`}
+                                >
+                                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                                </button>
+                            ))}
                         </div>
                     </div>
 
                     {filterType !== "range" ? (
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Select Date
-                            </label>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">Select Date</label>
                             <input
                                 type="date"
                                 value={selectedDate}
-                                onChange={(e) =>
-                                    setSelectedDate(e.target.value)
-                                }
+                                onChange={(e) => setSelectedDate(e.target.value)}
                                 className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
                             />
                         </div>
@@ -239,20 +269,13 @@ const FilterModal = ({
                             {(["start", "end"] as const).map((which) => (
                                 <div key={which}>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        {which === "start" ? "Start" : "End"}{" "}
-                                        Date
+                                        {which === "start" ? "Start" : "End"} Date
                                     </label>
                                     <input
                                         type="date"
-                                        value={
-                                            which === "start"
-                                                ? startDate
-                                                : endDate
-                                        }
+                                        value={which === "start" ? startDate : endDate}
                                         onChange={(e) =>
-                                            which === "start"
-                                                ? setStartDate(e.target.value)
-                                                : setEndDate(e.target.value)
+                                            which === "start" ? setStartDate(e.target.value) : setEndDate(e.target.value)
                                         }
                                         className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all bg-white"
                                     />
@@ -263,16 +286,10 @@ const FilterModal = ({
                 </div>
 
                 <div className="p-6 border-t border-gray-100 flex gap-3">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 px-6 py-2.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                    >
+                    <button onClick={onClose} className="flex-1 px-6 py-2.5 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors">
                         Cancel
                     </button>
-                    <button
-                        onClick={handleApply}
-                        className="flex-1 px-6 py-2.5 rounded-lg font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-sm"
-                    >
+                    <button onClick={handleApply} className="flex-1 px-6 py-2.5 rounded-lg font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-sm">
                         Apply Filter
                     </button>
                 </div>
@@ -284,14 +301,7 @@ const FilterModal = ({
 /* ================================================================
    MAP NOT UPLOADED POPUP
    ================================================================ */
-
-const MapNotUploadedPopup = ({
-    isOpen,
-    onClose,
-}: {
-    isOpen: boolean;
-    onClose: () => void;
-}) => {
+const MapNotUploadedPopup = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
     if (!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -299,16 +309,9 @@ const MapNotUploadedPopup = ({
                 <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
                     <AlertTriangle className="w-8 h-8 text-amber-600" />
                 </div>
-                <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                    Map Not Uploaded
-                </h3>
-                <p className="text-slate-600 mb-6">
-                    Please upload a map before enabling autonomous mode.
-                </p>
-                <button
-                    onClick={onClose}
-                    className="w-full px-6 py-3 rounded-xl font-medium bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-lg"
-                >
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">Map Not Uploaded</h3>
+                <p className="text-slate-600 mb-6">Please upload a map before enabling autonomous mode.</p>
+                <button onClick={onClose} className="w-full px-6 py-3 rounded-xl font-medium bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-lg">
                     OK
                 </button>
             </div>
@@ -319,17 +322,10 @@ const MapNotUploadedPopup = ({
 /* ================================================================
    LOW BATTERY WARNING POPUP
    ================================================================ */
-
 const LowBatteryWarningPopup = ({
-    isOpen,
-    onClose,
-    batteryLevel,
-    minimumThreshold,
+    isOpen, onClose, batteryLevel, minimumThreshold,
 }: {
-    isOpen: boolean;
-    onClose: () => void;
-    batteryLevel: number;
-    minimumThreshold: number;
+    isOpen: boolean; onClose: () => void; batteryLevel: number; minimumThreshold: number;
 }) => {
     if (!isOpen) return null;
     return (
@@ -338,23 +334,15 @@ const LowBatteryWarningPopup = ({
                 <div className="mx-auto w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mb-4">
                     <Battery className="w-8 h-8 text-rose-600" />
                 </div>
-                <h3 className="text-xl font-semibold text-slate-900 mb-2">
-                    Low Battery Warning
-                </h3>
+                <h3 className="text-xl font-semibold text-slate-900 mb-2">Low Battery Warning</h3>
                 <p className="text-slate-600 mb-4">
                     Battery level is critically low at{" "}
-                    <span className="font-bold text-rose-600">
-                        {batteryLevel.toFixed(1)}%
-                    </span>
+                    <span className="font-bold text-rose-600">{batteryLevel.toFixed(1)}%</span>
                 </p>
                 <p className="text-sm text-slate-500 mb-6">
-                    Minimum required: {minimumThreshold}%<br />
-                    Please charge the robot immediately.
+                    Minimum required: {minimumThreshold}%<br />Please charge the robot immediately.
                 </p>
-                <button
-                    onClick={onClose}
-                    className="w-full px-6 py-3 rounded-xl font-medium bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-lg"
-                >
+                <button onClick={onClose} className="w-full px-6 py-3 rounded-xl font-medium bg-rose-600 text-white hover:bg-rose-700 transition-colors shadow-lg">
                     Acknowledge
                 </button>
             </div>
@@ -365,82 +353,62 @@ const LowBatteryWarningPopup = ({
 /* ================================================================
    MAIN DASHBOARD COMPONENT
    ================================================================ */
-
 const Dashboard: React.FC = () => {
-    const [robotId, setRobotId] = useState<string>("");
-    const [roboId, setRoboId] = useState<string>("");
+    const [robotId, setRobotId]   = useState<string>("");
+    const [roboId, setRoboId]     = useState<string>("");
     const [robotData, setRobotData] = useState<RobotData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading]   = useState(true);
+    const [error, setError]       = useState<string | null>(null);
     const [showFilterModal, setShowFilterModal] = useState(false);
     const [currentFilter, setCurrentFilter] = useState<FilterData>({
         filter_type: "month",
         date: new Date().toISOString().split("T")[0],
     });
 
-    /* ---- navigation state ---- */
-    const [navigationMode, setNavigationMode] = useState<
-        "stationary" | "autonomous"
-    >("stationary");
-    const [navigationStyle, setNavigationStyle] = useState<
-        "free" | "strict" | "strict_with_autonomous"
-    >("free");
+    /* ── navigation ── */
+    const [navigationMode, setNavigationMode]   = useState<"stationary" | "autonomous">("stationary");
+    const [navigationStyle, setNavigationStyle] = useState<"free" | "strict" | "strict_with_autonomous">("free");
     const [navPatchLoading, setNavPatchLoading] = useState(false);
-    const [navPatchError, setNavPatchError] = useState<string | null>(null);
+    const [navPatchError, setNavPatchError]     = useState<string | null>(null);
 
-    /* ---- autonomous ready state ---- */
-    const [isAutonomousReady, setIsAutonomousReady] = useState(false);
-    const [isModeActive, setIsModeActive] = useState(false);
+    /* ── autonomous ready ── */
+    const [isAutonomousReady, setIsAutonomousReady]       = useState(false);
+    const [isModeActive, setIsModeActive]                 = useState(false);
     const [showMapNotUploadedPopup, setShowMapNotUploadedPopup] = useState(false);
 
-    /* ---- low battery warning state ---- */
-    const [showLowBatteryPopup, setShowLowBatteryPopup] = useState(false);
+    /* ── low battery ── */
+    const [showLowBatteryPopup, setShowLowBatteryPopup]     = useState(false);
     const [lowBatteryAcknowledged, setLowBatteryAcknowledged] = useState(false);
 
-    /* ---- location loading state ---- */
+    /* ── location ── */
     const [locationLoading, setLocationLoading] = useState(false);
+    const [locations, setLocations]             = useState<string[]>([]);
+    const [mapName, setMapName]                 = useState<string | undefined>(undefined);
 
+    /* ── WS connection ── */
     const [wsConnected, setWsConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
 
-    const [data, setData] = useState<DashboardData>({
-        inspection: {
-            total: 0,
-            defected: 0,
-            non_defected: 0,
-            approved: 0,
-            human_verified: 0,
-            pending_verification: 0,
-        },
-        schedules: { total: 0, scheduled: 0, processing: 0, completed: 0 },
-        battery: DEFAULT_BATTERY,
-        arm: {
-            connected: true,
-            temperature: 42.5,
-            position: { x: 125.4, y: 87.2, z: 56.8 },
-            velocity: 2.5,
-            gripperStatus: "open",
-            joints: [
-                { id: 1, name: "Base",     position: 45,  status: "normal"  },
-                { id: 2, name: "Shoulder", position: 120, status: "normal"  },
-                { id: 3, name: "Elbow",    position: 90,  status: "warning" },
-                { id: 4, name: "Wrist",    position: 60,  status: "normal"  },
-                { id: 5, name: "Gripper",  position: 30,  status: "normal"  },
-            ],
-        },
-        cameras: {
-            left:  { connected: false, usb_speed: "", profiles_ok: false, frames_ok: false },
-            right: { connected: false, usb_speed: "", profiles_ok: false, frames_ok: false },
-        },
-        locations: [],
-        mapName: undefined,
-        robotStatus: DEFAULT_ROBOT_STATUS,
-        canStatus: { can0: false, can1: false },
+    /* ── non-timed-out state ── */
+    const [inspection, setInspection] = useState<InspectionSummary>({
+        total: 0, defected: 0, non_defected: 0,
+        approved: 0, human_verified: 0, pending_verification: 0,
     });
-
+    const [schedules, setSchedules] = useState<ScheduleSummary>({
+        total: 0, scheduled: 0, processing: 0, completed: 0,
+    });
+    const [robotStatus, setRobotStatus] = useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
     const [time, setTime] = useState(new Date().toLocaleTimeString());
 
-    /* ── Get robot ID from URL path ── */
+    /* ================================================================
+       PER-CHANNEL WS STATE — each resets to defaults after 3 s silence
+       ================================================================ */
+    const batteryChannel = useWsChannel<BatteryStatus>(DEFAULT_BATTERY);
+    const canChannel     = useWsChannel<CanStatus>(DEFAULT_CAN_STATUS);
+    const cameraChannel  = useWsChannel<{ left: CameraStatus; right: CameraStatus }>(DEFAULT_CAMERAS);
+    const armTempChannel = useWsChannel<number>(DEFAULT_ARM_TEMPERATURE);
+
+    /* ── Get robot ID from URL ── */
     useEffect(() => {
         const parts = window.location.pathname.split("/");
         setRobotId(parts[parts.length - 1]);
@@ -449,204 +417,153 @@ const Dashboard: React.FC = () => {
     /* ── Fetch robot data ── */
     useEffect(() => {
         if (!robotId) return;
-        const fetchRobotData = async () => {
+        (async () => {
             try {
                 setLoading(true);
-                const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/`);
-                if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                const res    = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const result = await res.json();
                 const robot: RobotData = result.data;
                 setRobotData(robot);
                 if (robot.robo_id) setRoboId(robot.robo_id);
                 setError(null);
             } catch (err) {
-                console.error("Error fetching robot data:", err);
+                console.error(err);
                 setError("Failed to load robot data");
                 setRobotData(null);
             } finally {
                 setLoading(false);
             }
-        };
-        fetchRobotData();
+        })();
     }, [robotId]);
 
     /* ── Low battery check ── */
     useEffect(() => {
         if (!robotData?.minimum_battery_charge) return;
-        const { level, status } = data.battery;
+        const { level, status } = batteryChannel.value;
         const min = robotData.minimum_battery_charge;
-        const isDischarging = status === "discharging" || status === "low";
-
-        if (level < min && isDischarging && !lowBatteryAcknowledged) {
+        const discharging = status === "discharging" || status === "low";
+        if (level < min && discharging && !lowBatteryAcknowledged) {
             setShowLowBatteryPopup(true);
         } else if (level >= min || status === "charging" || status === "full") {
             setLowBatteryAcknowledged(false);
             setShowLowBatteryPopup(false);
         }
-    }, [data.battery.level, data.battery.status, robotData, lowBatteryAcknowledged]);
+    }, [batteryChannel.value.level, batteryChannel.value.status, robotData, lowBatteryAcknowledged]);
 
     /* ── Fetch filtered schedule + inspection data ── */
     useEffect(() => {
         if (!robotId) return;
-        const fetchFilteredData = async () => {
+        (async () => {
             try {
-                const res = await fetchWithAuth(
-                    `${API_BASE_URL}/schedule/robot/${robotId}/filter/`,
-                    {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(currentFilter),
-                    },
-                );
-                if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+                const res = await fetchWithAuth(`${API_BASE_URL}/schedule/robot/${robotId}/filter/`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(currentFilter),
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const result = await res.json();
-
-                setData((prev) => ({
-                    ...prev,
-                    ...(result.schedule_summary && {
-                        schedules: {
-                            total:      result.schedule_summary.total      ?? 0,
-                            scheduled:  result.schedule_summary.scheduled  ?? 0,
-                            processing: result.schedule_summary.processing ?? 0,
-                            completed:  result.schedule_summary.completed  ?? 0,
-                        },
-                    }),
-                    ...(result.inspection_summary && {
-                        inspection: {
-                            total:                result.inspection_summary.total                ?? 0,
-                            defected:             result.inspection_summary.defected             ?? 0,
-                            non_defected:         result.inspection_summary.non_defected         ?? 0,
-                            approved:             result.inspection_summary.approved             ?? 0,
-                            human_verified:       result.inspection_summary.human_verified       ?? 0,
-                            pending_verification: result.inspection_summary.pending_verification ?? 0,
-                        },
-                    }),
-                }));
+                if (result.schedule_summary) {
+                    setSchedules({
+                        total:      result.schedule_summary.total      ?? 0,
+                        scheduled:  result.schedule_summary.scheduled  ?? 0,
+                        processing: result.schedule_summary.processing ?? 0,
+                        completed:  result.schedule_summary.completed  ?? 0,
+                    });
+                }
+                if (result.inspection_summary) {
+                    setInspection({
+                        total:                result.inspection_summary.total                ?? 0,
+                        defected:             result.inspection_summary.defected             ?? 0,
+                        non_defected:         result.inspection_summary.non_defected         ?? 0,
+                        approved:             result.inspection_summary.approved             ?? 0,
+                        human_verified:       result.inspection_summary.human_verified       ?? 0,
+                        pending_verification: result.inspection_summary.pending_verification ?? 0,
+                    });
+                }
             } catch (err) {
-                console.error("Error fetching filtered data:", err);
+                console.error(err);
             }
-        };
-        fetchFilteredData();
+        })();
     }, [robotId, currentFilter]);
 
-    /* ================================================================
-       FETCH LOCATIONS — extracted as a reusable callback so both the
-       initial load AND the upload_clicked WS event can call it
-       ================================================================ */
+    /* ── Fetch locations ── */
     const fetchLocations = useCallback(async (id: string) => {
         if (!id) return;
         try {
             setLocationLoading(true);
-            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${id}/location/`);
-            if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+            const res    = await fetchWithAuth(`${API_BASE_URL}/robots/${id}/location/`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const result = await res.json();
-            const locationData = result?.data?.location_data?.data;
-            const locationsArray = Object.values(
-                locationData?.locations ?? {},
-            ).filter(Boolean) as string[];
-            setData((prev) => ({
-                ...prev,
-                locations: locationsArray,
-                mapName: locationData?.map_name ?? "",
-            }));
+            const ld     = result?.data?.location_data?.data;
+            setLocations(Object.values(ld?.locations ?? {}).filter(Boolean) as string[]);
+            setMapName(ld?.map_name ?? "");
         } catch (err) {
-            console.error("Error fetching locations:", err);
+            console.error(err);
         } finally {
             setLocationLoading(false);
         }
     }, []);
 
-    /* ── Initial location fetch ── */
-    useEffect(() => {
-        if (!robotId) return;
-        fetchLocations(robotId);
-    }, [robotId, fetchLocations]);
+    useEffect(() => { if (robotId) fetchLocations(robotId); }, [robotId, fetchLocations]);
 
     /* ── Clock ── */
     useEffect(() => {
-        const interval = setInterval(
-            () => setTime(new Date().toLocaleTimeString()),
-            1000,
-        );
-        return () => clearInterval(interval);
+        const t = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
+        return () => clearInterval(t);
     }, []);
 
-    /* ── Location click via WebSocket ── */
-    const handleLocationClick = useCallback(
-        (locationName: string) => {
-            if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-                console.warn("⚠️ WebSocket not connected.");
-                return;
-            }
-            wsRef.current.send(
-                JSON.stringify({
-                    event: "move_to_location",
-                    data: {
-                        location_name: locationName.trim(),
-                        navigation_style: navigationStyle,
-                        status: true,
-                    },
-                }),
-            );
-        },
-        [navigationStyle],
-    );
-
-    /* ── PATCH navigation ── */
-    const patchNavigation = useCallback(
-        async (
-            mode: "stationary" | "autonomous",
-            style?: "free" | "strict" | "strict_with_autonomous",
-        ) => {
-            if (!robotId) return;
-            setNavPatchLoading(true);
-            setNavPatchError(null);
-            const payload: NavigationPayload = { navigation_mode: mode };
-            if (mode === "autonomous" && style)
-                payload.navigation_style = style;
-
-            try {
-                const res = await fetchWithAuth(
-                    `${API_BASE_URL}/robots/${robotId}/navigation/`,
-                    {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload),
-                    },
-                );
-                if (!res.ok) throw new Error(`PATCH failed: ${res.status}`);
-            } catch (err) {
-                console.error("❌ Navigation PATCH error:", err);
-                setNavPatchError("Failed to update navigation");
-                setNavigationMode((prev) =>
-                    prev === "autonomous" ? "stationary" : "autonomous",
-                );
-            } finally {
-                setNavPatchLoading(false);
-            }
-        },
-        [robotId],
-    );
-
-    const handleToggleNavigation = useCallback(() => {
-        if (!isAutonomousReady) {
-            setShowMapNotUploadedPopup(true);
+    /* ── Location click via WS ── */
+    const handleLocationClick = useCallback((locationName: string) => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+            console.warn("⚠️ WS not connected");
             return;
         }
+        wsRef.current.send(JSON.stringify({
+            event: "move_to_location",
+            data: { location_name: locationName.trim(), navigation_style: navigationStyle, status: true },
+        }));
+    }, [navigationStyle]);
+
+    /* ── PATCH navigation ── */
+    const patchNavigation = useCallback(async (
+        mode: "stationary" | "autonomous",
+        style?: "free" | "strict" | "strict_with_autonomous",
+    ) => {
+        if (!robotId) return;
+        setNavPatchLoading(true);
+        setNavPatchError(null);
+        const payload: NavigationPayload = { navigation_mode: mode };
+        if (mode === "autonomous" && style) payload.navigation_style = style;
+        try {
+            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/navigation/`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error(`PATCH ${res.status}`);
+        } catch (err) {
+            console.error(err);
+            setNavPatchError("Failed to update navigation");
+            setNavigationMode((p) => (p === "autonomous" ? "stationary" : "autonomous"));
+        } finally {
+            setNavPatchLoading(false);
+        }
+    }, [robotId]);
+
+    const handleToggleNavigation = useCallback(() => {
+        if (!isAutonomousReady) { setShowMapNotUploadedPopup(true); return; }
         if (navPatchLoading) return;
         const next = navigationMode === "stationary" ? "autonomous" : "stationary";
         setNavigationMode(next);
         patchNavigation(next, next === "autonomous" ? navigationStyle : undefined);
     }, [isAutonomousReady, navPatchLoading, navigationMode, navigationStyle, patchNavigation]);
 
-    const handleStyleChange = useCallback(
-        (style: "free" | "strict" | "strict_with_autonomous") => {
-            if (navPatchLoading) return;
-            setNavigationStyle(style);
-            patchNavigation(navigationMode, style);
-        },
-        [navPatchLoading, navigationMode, patchNavigation],
-    );
+    const handleStyleChange = useCallback((style: "free" | "strict" | "strict_with_autonomous") => {
+        if (navPatchLoading) return;
+        setNavigationStyle(style);
+        patchNavigation(navigationMode, style);
+    }, [navPatchLoading, navigationMode, patchNavigation]);
 
     const handleLowBatteryClose = useCallback(() => {
         setShowLowBatteryPopup(false);
@@ -655,7 +572,6 @@ const Dashboard: React.FC = () => {
 
     /* ================================================================
        WEBSOCKET
-       — upload_clicked event: status:true → refetch locations
        ================================================================ */
     useEffect(() => {
         if (!roboId) return;
@@ -665,74 +581,29 @@ const Dashboard: React.FC = () => {
 
         const connect = () => {
             try {
-                ws = new WebSocket(
-                    `ws://192.168.0.216:8002/ws/robot_message/${roboId}/`,
-                );
+                ws = new WebSocket(`ws://192.168.0.216:8002/ws/robot_message/${roboId}/`);
                 wsRef.current = ws;
-
                 ws.onopen = () => setWsConnected(true);
 
                 ws.onmessage = (event) => {
                     try {
                         const payload = JSON.parse(event.data as string);
 
-                        /* ── upload_clicked ──────────────────────────────
-                           When the user uploads a new map on the robot,
-                           the WS fires this event with status:true.
-                           We immediately refetch /robots/${robotId}/location/
-                           so the location list reflects the new map.
-                        ─────────────────────────────────────────────── */
-                        if (payload.event === "upload_clicked") {
-                            if (payload.data?.status === true) {
-                                console.log("📍 upload_clicked received — refreshing locations...");
-                                fetchLocations(robotId);
-                            }
+                        /* upload_clicked — no timeout needed */
+                        if (payload.event === "upload_clicked" && payload.data?.status === true) {
+                            fetchLocations(robotId);
                         }
 
+                        /* robot_status — no timeout (header handles its own reset) */
                         if (payload.event === "robot_status") {
-                            setData((prev) => ({
-                                ...prev,
-                                robotStatus: {
-                                    break_status:
-                                        payload.data.break_status     ?? prev.robotStatus.break_status,
-                                    emergency_status:
-                                        payload.data.emergency_status ?? prev.robotStatus.emergency_status,
-                                    Arm_moving:
-                                        payload.data.Arm_moving       ?? prev.robotStatus.Arm_moving,
-                                },
-                            }));
+                            setRobotStatus({
+                                break_status:     payload.data.break_status     ?? false,
+                                emergency_status: payload.data.emergency_status ?? false,
+                                Arm_moving:       payload.data.Arm_moving       ?? false,
+                            });
                         }
 
-                        if (payload.event === "can_status") {
-                            setData((prev) => ({
-                                ...prev,
-                                canStatus: {
-                                    can0: payload.data.can0 ?? prev.canStatus.can0,
-                                    can1: payload.data.can1 ?? prev.canStatus.can1,
-                                },
-                            }));
-                        }
-
-                        if (payload.event === "camera_status_update") {
-                            setData((prev) => ({
-                                ...prev,
-                                cameras: {
-                                    left: {
-                                        connected:   payload.data.left_camera?.connected   ?? prev.cameras.left.connected,
-                                        usb_speed:   payload.data.left_camera?.usb_speed   ?? prev.cameras.left.usb_speed,
-                                        profiles_ok: payload.data.left_camera?.profiles_ok ?? prev.cameras.left.profiles_ok,
-                                        frames_ok:   payload.data.left_camera?.frames_ok   ?? prev.cameras.left.frames_ok,
-                                    },
-                                    right: {
-                                        connected:   payload.data.right_camera?.connected   ?? prev.cameras.right.connected,
-                                        usb_speed:   payload.data.right_camera?.usb_speed   ?? prev.cameras.right.usb_speed,
-                                        profiles_ok: payload.data.right_camera?.profiles_ok ?? prev.cameras.right.profiles_ok,
-                                        frames_ok:   payload.data.right_camera?.frames_ok   ?? prev.cameras.right.frames_ok,
-                                    },
-                                },
-                            }));
-                        }
-
+                        /* ── battery_information → 3 s → DEFAULT_BATTERY ── */
                         if (payload.event === "battery_information") {
                             const soc     = Number(payload.data?.soc)     || 0;
                             const current = Number(payload.data?.current) || 0;
@@ -746,44 +617,64 @@ const Dashboard: React.FC = () => {
                                 : soc < 20    ? "low"
                                 :               "discharging";
 
-                            const hours   = Math.floor(soc / 20);
-                            const minutes = Math.floor((soc % 20) * 3);
-
-                            setData((prev) => ({
-                                ...prev,
-                                battery: {
-                                    level: soc,
-                                    status,
-                                    timeRemaining: `${hours}h ${minutes}m`,
-                                    voltage,
-                                    current,
-                                    power,
-                                    dod,
-                                },
-                            }));
+                            batteryChannel.update({
+                                level: soc,
+                                status,
+                                timeRemaining: `${Math.floor(soc / 20)}h ${Math.floor((soc % 20) * 3)}m`,
+                                voltage, current, power, dod,
+                            });
                         }
 
+                        /* ── can_status → 3 s → DEFAULT_CAN_STATUS ── */
+                        if (payload.event === "can_status") {
+                            canChannel.update({
+                                can0: payload.data.can0 ?? false,
+                                can1: payload.data.can1 ?? false,
+                            });
+                        }
+
+                        /* ── camera_status_update → 3 s → DEFAULT_CAMERAS ── */
+                        if (payload.event === "camera_status_update") {
+                            cameraChannel.update({
+                                left: {
+                                    connected:   payload.data.left_camera?.connected   ?? false,
+                                    usb_speed:   payload.data.left_camera?.usb_speed   ?? "",
+                                    profiles_ok: payload.data.left_camera?.profiles_ok ?? false,
+                                    frames_ok:   payload.data.left_camera?.frames_ok   ?? false,
+                                },
+                                right: {
+                                    connected:   payload.data.right_camera?.connected   ?? false,
+                                    usb_speed:   payload.data.right_camera?.usb_speed   ?? "",
+                                    profiles_ok: payload.data.right_camera?.profiles_ok ?? false,
+                                    frames_ok:   payload.data.right_camera?.frames_ok   ?? false,
+                                },
+                            });
+                        }
+
+                        /* ── arm_temperature → 3 s → 0 ── */
+                        if (payload.event === "arm_temperature") {
+                            armTempChannel.update(Number(payload.data?.temperature) || 0);
+                        }
+
+                        /* autonomous_ready — no timeout */
                         if (payload.event === "autonomous_ready") {
                             setIsAutonomousReady(payload.data?.status === true);
                             setIsModeActive(payload.data?.mode_active === true);
                         }
                     } catch (err) {
-                        console.error("❌ WS message parse error:", err);
+                        console.error("❌ WS parse error:", err);
                     }
                 };
 
-                ws.onerror = (err) => console.error("❌ WS error:", err);
-
-                ws.onclose = () => {
+                ws.onerror  = (err) => console.error("❌ WS error:", err);
+                ws.onclose  = () => {
                     setWsConnected(false);
                     wsRef.current = null;
-                    if (!isManualClose)
-                        reconnectTimeout = setTimeout(connect, 3000);
+                    if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
                 };
             } catch (err) {
                 console.error("❌ WS init failed:", err);
-                if (!isManualClose)
-                    reconnectTimeout = setTimeout(connect, 3000);
+                if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
             }
         };
 
@@ -794,19 +685,13 @@ const Dashboard: React.FC = () => {
             ws?.close();
             wsRef.current = null;
         };
-    // fetchLocations is stable (useCallback with no deps that change),
-    // so including it here is safe and fixes the eslint exhaustive-deps warning
-    }, [roboId, fetchLocations, robotId]);
+    // batteryChannel.update etc. are stable (useCallback with no deps)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [roboId, robotId, fetchLocations]);
 
     /* ── Derived values ── */
-    const defectRate =
-        data.inspection.total > 0
-            ? (data.inspection.defected / data.inspection.total) * 100
-            : 0;
-    const successRate =
-        data.inspection.total > 0
-            ? ((data.inspection.total - data.inspection.defected) / data.inspection.total) * 100
-            : 0;
+    const defectRate  = inspection.total > 0 ? (inspection.defected / inspection.total) * 100 : 0;
+    const successRate = inspection.total > 0 ? ((inspection.total - inspection.defected) / inspection.total) * 100 : 0;
     const isAutonomous = navigationMode === "autonomous";
 
     const getFilterLabel = () => {
@@ -830,7 +715,6 @@ const Dashboard: React.FC = () => {
             </div>
         );
     }
-
     if (error) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center">
@@ -838,10 +722,7 @@ const Dashboard: React.FC = () => {
                     <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
                     <p className="text-slate-800 text-lg font-semibold mb-2">Error Loading Dashboard</p>
                     <p className="text-slate-600">{error}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                    >
+                    <button onClick={() => window.location.reload()} className="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
                         Retry
                     </button>
                 </div>
@@ -860,14 +741,11 @@ const Dashboard: React.FC = () => {
                 onApply={setCurrentFilter}
                 currentFilter={currentFilter}
             />
-            <MapNotUploadedPopup
-                isOpen={showMapNotUploadedPopup}
-                onClose={() => setShowMapNotUploadedPopup(false)}
-            />
+            <MapNotUploadedPopup isOpen={showMapNotUploadedPopup} onClose={() => setShowMapNotUploadedPopup(false)} />
             <LowBatteryWarningPopup
                 isOpen={showLowBatteryPopup}
                 onClose={handleLowBatteryClose}
-                batteryLevel={data.battery.level}
+                batteryLevel={batteryChannel.value.level}
                 minimumThreshold={robotData?.minimum_battery_charge ?? 20}
             />
 
@@ -875,15 +753,20 @@ const Dashboard: React.FC = () => {
                 title="Robotic Inspection Dashboard"
                 subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
                 robotData={robotData}
-                battery={data.battery}
-                robotStatus={data.robotStatus}
+                battery={batteryChannel.value}
+                robotStatus={robotStatus}
                 wsConnected={wsConnected}
                 time={time}
+                lastWsEvent={null}
             />
 
             <main className="flex flex-col lg:flex-row gap-6 mt-6">
-                {/* ── LEFT COLUMN (60%) ── */}
+
+                {/* ══════════════════════════════════
+                    LEFT COLUMN (60%)
+                ══════════════════════════════════ */}
                 <div className="lg:w-3/5 space-y-6">
+
                     {/* Defect Analysis */}
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
@@ -893,20 +776,18 @@ const Dashboard: React.FC = () => {
                             </h2>
                             <div className="px-3 py-1.5 bg-slate-50 border-slate-100 rounded-lg text-xs font-medium border">
                                 <span className="text-slate-600">Success: </span>
-                                <span className="text-emerald-600 font-semibold">
-                                    {successRate.toFixed(1)}%
-                                </span>
+                                <span className="text-emerald-600 font-semibold">{successRate.toFixed(1)}%</span>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                             {[
-                                { label: "Total Scanned", value: data.inspection.total,                icon: <HardDrive   size={18} className="text-blue-500"    />, bg: "bg-slate-50",   border: "border-slate-100",   text: "text-slate-900"   },
-                                { label: "Defected",      value: data.inspection.defected,             icon: <AlertTriangle size={18} className="text-rose-500"  />, bg: "bg-rose-50",    border: "border-rose-100",    text: "text-rose-700"    },
-                                { label: "Non-Defected",  value: data.inspection.non_defected,         icon: <CheckCircle size={18} className="text-emerald-500"  />, bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-700" },
-                                { label: "Approved",      value: data.inspection.approved,             icon: <CheckCheck  size={18} className="text-green-500"    />, bg: "bg-green-50",   border: "border-green-100",   text: "text-green-700"   },
-                                { label: "Verified",      value: data.inspection.human_verified,       icon: <CheckCircle size={18} className="text-blue-500"     />, bg: "bg-blue-50",    border: "border-blue-100",    text: "text-blue-700"    },
-                                { label: "Pending",       value: data.inspection.pending_verification, icon: <Clock       size={18} className="text-amber-500"    />, bg: "bg-amber-50",   border: "border-amber-100",   text: "text-amber-700"   },
+                                { label: "Total Scanned", value: inspection.total,                icon: <HardDrive     size={18} className="text-blue-500"    />, bg: "bg-slate-50",   border: "border-slate-100",   text: "text-slate-900"   },
+                                { label: "Defected",      value: inspection.defected,             icon: <AlertTriangle size={18} className="text-rose-500"    />, bg: "bg-rose-50",    border: "border-rose-100",    text: "text-rose-700"    },
+                                { label: "Non-Defected",  value: inspection.non_defected,         icon: <CheckCircle   size={18} className="text-emerald-500" />, bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-700" },
+                                { label: "Approved",      value: inspection.approved,             icon: <CheckCheck    size={18} className="text-green-500"   />, bg: "bg-green-50",   border: "border-green-100",   text: "text-green-700"   },
+                                { label: "Verified",      value: inspection.human_verified,       icon: <CheckCircle   size={18} className="text-blue-500"    />, bg: "bg-blue-50",    border: "border-blue-100",    text: "text-blue-700"    },
+                                { label: "Pending",       value: inspection.pending_verification, icon: <Clock         size={18} className="text-amber-500"   />, bg: "bg-amber-50",   border: "border-amber-100",   text: "text-amber-700"   },
                             ].map(({ label, value, icon, bg, border, text }) => (
                                 <div key={label} className={`${bg} p-4 rounded-lg border ${border}`}>
                                     <div className="flex justify-between">
@@ -922,16 +803,11 @@ const Dashboard: React.FC = () => {
                             <div className="flex flex-col md:flex-row justify-between mb-2 gap-2">
                                 <div>
                                     <h3 className="font-medium">Defect Rate</h3>
-                                    <p className="text-sm text-slate-500">
-                                        {defectRate.toFixed(2)}% of scanned items have defects
-                                    </p>
+                                    <p className="text-sm text-slate-500">{defectRate.toFixed(2)}% of scanned items have defects</p>
                                 </div>
                             </div>
                             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-gradient-to-r from-rose-400 to-amber-400"
-                                    style={{ width: `${defectRate}%` }}
-                                />
+                                <div className="h-full bg-gradient-to-r from-rose-400 to-amber-400" style={{ width: `${defectRate}%` }} />
                             </div>
                         </div>
                     </div>
@@ -941,9 +817,7 @@ const Dashboard: React.FC = () => {
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                             <div className="space-y-1">
                                 <h3 className="text-2xl font-bold text-gray-900">Schedule Dashboard</h3>
-                                <p className="text-gray-600">
-                                    View detailed schedule information and inspection results with advanced filtering options.
-                                </p>
+                                <p className="text-gray-600">View detailed schedule information and inspection results with advanced filtering options.</p>
                             </div>
                             <div className="relative inline-flex">
                                 <a
@@ -951,21 +825,11 @@ const Dashboard: React.FC = () => {
                                     className="relative z-10 flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 group/btn hover:shadow-2xl"
                                 >
                                     <span className="tracking-tight">Go to Schedules</span>
-                                    <svg
-                                        className="w-5 h-5 transition-transform duration-300 group-hover/btn:translate-x-1"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth="2"
-                                            d="M14 5l7 7m0 0l-7 7m7-7H3"
-                                        />
+                                    <svg className="w-5 h-5 transition-transform duration-300 group-hover/btn:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
                                     </svg>
                                 </a>
-                                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 via-emerald-300 to-emerald-400 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-500"></div>
+                                <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 via-emerald-300 to-emerald-400 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-500" />
                             </div>
                         </div>
                     </div>
@@ -988,10 +852,10 @@ const Dashboard: React.FC = () => {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             {[
-                                { label: "Total",      value: data.schedules.total,      icon: <CalendarCheck className="text-blue-500/80"    size={18} />, bg: "bg-slate-50/70",   border: "border-slate-200/50",   text: "text-slate-900"   },
-                                { label: "Scheduled",  value: data.schedules.scheduled,  icon: <Calendar      className="text-blue-600/80"    size={18} />, bg: "bg-blue-50/50",    border: "border-blue-200/30",    text: "text-blue-700"    },
-                                { label: "Processing", value: data.schedules.processing, icon: <Clock        className="text-amber-600/80"   size={18} />, bg: "bg-amber-50/50",   border: "border-amber-200/30",   text: "text-amber-700"   },
-                                { label: "Completed",  value: data.schedules.completed,  icon: <CheckCircle  className="text-emerald-600/80" size={18} />, bg: "bg-emerald-50/50", border: "border-emerald-200/30", text: "text-emerald-700" },
+                                { label: "Total",      value: schedules.total,      icon: <CalendarCheck className="text-blue-500/80"    size={18} />, bg: "bg-slate-50/70",   border: "border-slate-200/50",   text: "text-slate-900"   },
+                                { label: "Scheduled",  value: schedules.scheduled,  icon: <Calendar      className="text-blue-600/80"    size={18} />, bg: "bg-blue-50/50",    border: "border-blue-200/30",    text: "text-blue-700"    },
+                                { label: "Processing", value: schedules.processing, icon: <Clock         className="text-amber-600/80"   size={18} />, bg: "bg-amber-50/50",   border: "border-amber-200/30",   text: "text-amber-700"   },
+                                { label: "Completed",  value: schedules.completed,  icon: <CheckCircle   className="text-emerald-600/80" size={18} />, bg: "bg-emerald-50/50", border: "border-emerald-200/30", text: "text-emerald-700" },
                             ].map(({ label, value, icon, bg, border, text }) => (
                                 <div key={label} className={`${bg} p-4 rounded-lg border ${border}`}>
                                     <div className="flex items-center justify-between">
@@ -1006,93 +870,85 @@ const Dashboard: React.FC = () => {
                         <div className="pt-6 border-t border-slate-200/50">
                             <div className="flex flex-col md:flex-row justify-between mb-2 gap-2">
                                 <h3 className="font-medium text-slate-800">Schedule Progress</h3>
-                                <span className="text-sm text-slate-500">
-                                    {data.schedules.completed} of {data.schedules.total} completed
-                                </span>
+                                <span className="text-sm text-slate-500">{schedules.completed} of {schedules.total} completed</span>
                             </div>
                             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                     className="h-full bg-gradient-to-r from-blue-400 to-emerald-400 rounded-full"
-                                    style={{
-                                        width: `${data.schedules.total > 0 ? (data.schedules.completed / data.schedules.total) * 100 : 0}%`,
-                                    }}
+                                    style={{ width: `${schedules.total > 0 ? (schedules.completed / schedules.total) * 100 : 0}%` }}
                                 />
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* ── RIGHT COLUMN (40%) ── */}
+                {/* ══════════════════════════════════
+                    RIGHT COLUMN (40%)
+                ══════════════════════════════════ */}
                 <div className="lg:w-2/5 space-y-6">
                     <div className="grid grid-cols-2 gap-6">
-                        {/* Battery */}
-                        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
-                                <h2 className="text-xl font-semibold flex items-center gap-3">
+
+                        {/* ── Battery Card ── */}
+                        <div className="relative bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+                            {/* <StaleOverlay show={batteryChannel.isStale} /> */}
+
+                            <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
+                                <h2 className="text-xl font-semibold flex items-center gap-2">
                                     <Battery className="text-emerald-500/80" size={24} />
-                                    <span className="text-slate-800">Robot Battery</span>
+                                    <span className="text-slate-800">Battery</span>
                                 </h2>
-                                <div
-                                    className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                        data.battery.status === "charging"
-                                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                            : data.battery.status === "low"
-                                              ? "bg-rose-50 text-rose-700 border border-rose-200"
-                                              : "bg-blue-50 text-blue-700 border border-blue-200"
-                                    }`}
-                                >
-                                    {data.battery.status.charAt(0).toUpperCase() + data.battery.status.slice(1)}
+                                <div className="flex flex-col items-end gap-1">
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                        batteryChannel.value.status === "charging" ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                        : batteryChannel.value.status === "low"    ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                        :                                             "bg-blue-50 text-blue-700 border border-blue-200"
+                                    }`}>
+                                        {batteryChannel.value.status.charAt(0).toUpperCase() + batteryChannel.value.status.slice(1)}
+                                    </span>
                                 </div>
                             </div>
 
-                            <div className="text-center mb-6">
-                                <div className="text-4xl font-bold mb-1.5 text-slate-900">
-                                    {data.battery.level.toFixed(1)}%
-                                </div>
+                            <div className="text-center mb-4">
+                                <div className="text-4xl font-bold text-slate-900">{batteryChannel.value.level.toFixed(1)}%</div>
                             </div>
 
                             <div className="h-6 bg-slate-100 rounded-full overflow-hidden mb-2">
                                 <div
-                                    className={`h-full rounded-full ${
-                                        data.battery.level > 50
-                                            ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
-                                            : data.battery.level > 20
-                                              ? "bg-gradient-to-r from-amber-500 to-amber-400"
-                                              : "bg-gradient-to-r from-rose-500 to-rose-400"
+                                    className={`h-full rounded-full transition-all duration-500 ${
+                                        batteryChannel.value.level > 50 ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
+                                        : batteryChannel.value.level > 20 ? "bg-gradient-to-r from-amber-500 to-amber-400"
+                                        : "bg-gradient-to-r from-rose-500 to-rose-400"
                                     }`}
-                                    style={{ width: `${data.battery.level}%` }}
+                                    style={{ width: `${batteryChannel.value.level}%` }}
                                 />
                             </div>
-                            <div className="flex justify-between text-xs text-slate-400 mb-6">
-                                <span>0%</span>
-                                <span>50%</span>
-                                <span>100%</span>
+                            <div className="flex justify-between text-xs text-slate-400 mb-4">
+                                <span>0%</span><span>50%</span><span>100%</span>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/30">
                                     <div className="text-slate-600 text-xs font-medium mb-1">DOD</div>
                                     <div className="text-lg font-bold text-slate-900">
-                                        {data.battery.dod ? `${data.battery.dod.toFixed(0)}%` : "N/A"}
+                                        {batteryChannel.value.dod != null ? `${batteryChannel.value.dod.toFixed(0)}%` : "0%"}
                                     </div>
                                 </div>
                                 <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/30">
                                     <div className="text-slate-600 text-xs font-medium mb-1">Voltage</div>
                                     <div className="text-lg font-bold text-slate-900">
-                                        {data.battery.voltage ? `${data.battery.voltage.toFixed(1)}V` : "N/A"}
+                                        {batteryChannel.value.voltage ? `${batteryChannel.value.voltage.toFixed(1)}V` : "0V"}
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Robot Location */}
+                        {/* ── Robot Location Card ── */}
                         <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-xl font-semibold flex items-center gap-2">
                                     <MapPin className="text-blue-500/80" size={24} />
                                     <span className="text-slate-800">Robot Location</span>
                                 </h2>
-                                {/* ── Loading spinner shown while fetching locations ── */}
                                 {locationLoading && (
                                     <div className="flex items-center gap-1.5 text-xs text-blue-600">
                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1101,7 +957,6 @@ const Dashboard: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Stationary ←→ Autonomous toggle */}
                             <div className="flex items-center justify-center gap-3 mb-3">
                                 <span className={`text-xs font-semibold transition-colors duration-300 ${!isAutonomous ? "text-slate-800" : "text-slate-400"}`}>
                                     Stationary
@@ -1119,9 +974,7 @@ const Dashboard: React.FC = () => {
                                             <Loader2 className="w-4 h-4 animate-spin text-white" />
                                         </span>
                                     )}
-                                    <span
-                                        className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out ${isAutonomous ? "translate-x-7" : "translate-x-0"}`}
-                                    />
+                                    <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out ${isAutonomous ? "translate-x-7" : "translate-x-0"}`} />
                                 </button>
                                 <span className={`text-xs font-semibold transition-colors duration-300 ${isAutonomous ? "text-blue-700" : "text-slate-400"}`}>
                                     Autonomous
@@ -1139,10 +992,7 @@ const Dashboard: React.FC = () => {
                                 <div className="flex items-center gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
                                     <span>{navPatchError}</span>
-                                    <button
-                                        onClick={() => setNavPatchError(null)}
-                                        className="ml-auto text-rose-400 hover:text-rose-600"
-                                    >
+                                    <button onClick={() => setNavPatchError(null)} className="ml-auto text-rose-400 hover:text-rose-600">
                                         <X className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
@@ -1181,36 +1031,31 @@ const Dashboard: React.FC = () => {
 
                                 <div className="flex items-center justify-between mb-2">
                                     <h3 className="font-medium text-slate-800 text-sm">Recent Locations</h3>
-                                    {data.locations && data.locations.length > 0 && (
-                                        <span className="text-xs text-slate-500">Map: {data.mapName}</span>
-                                    )}
+                                    {locations.length > 0 && <span className="text-xs text-slate-500">Map: {mapName}</span>}
                                 </div>
 
                                 <div className="space-y-2 h-44 overflow-y-auto">
                                     {locationLoading ? (
-                                        /* ── Skeleton while locations are being refreshed ── */
                                         <div className="flex flex-col items-center justify-center h-full py-6 text-slate-400">
                                             <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-400" />
                                             <p className="text-sm">Loading locations...</p>
                                         </div>
-                                    ) : data.locations && data.locations.length > 0 ? (
-                                        data.locations.map((location, index) => (
+                                    ) : locations.length > 0 ? (
+                                        locations.map((loc, i) => (
                                             <div
-                                                key={index}
-                                                onClick={() => handleLocationClick(location)}
+                                                key={i}
+                                                onClick={() => handleLocationClick(loc)}
                                                 className="flex items-center gap-3 px-3 py-3 rounded-lg bg-slate-50/80 text-slate-700 text-sm hover:bg-slate-100 transition-colors border border-slate-200/50 cursor-pointer active:bg-slate-200"
                                             >
                                                 <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                                <span>{location}</span>
+                                                <span>{loc}</span>
                                             </div>
                                         ))
                                     ) : (
                                         <div className="h-full flex flex-col items-center justify-center py-6 text-slate-400">
                                             <MapPin className="w-10 h-10 mx-auto mb-2 opacity-30" />
                                             <p className="text-sm">No locations available</p>
-                                            <p className="text-xs text-slate-500 mt-0.5">
-                                                Robot location data will appear here
-                                            </p>
+                                            <p className="text-xs text-slate-500 mt-0.5">Robot location data will appear here</p>
                                         </div>
                                     )}
                                 </div>
@@ -1220,16 +1065,17 @@ const Dashboard: React.FC = () => {
                                 <div className="flex flex-col items-center justify-center py-10 text-slate-400">
                                     <Navigation className="w-10 h-10 mx-auto mb-2 opacity-25" />
                                     <p className="text-sm font-medium">Stationary Mode</p>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Enable autonomous to see locations
-                                    </p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Enable autonomous to see locations</p>
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* Camera Status */}
-                    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+                    {/* ── Camera Status Card ── */}
+                    <div className="relative bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+                        {/* Overlay covers the whole card when camera data is stale */}
+                        {/* <StaleOverlay show={cameraChannel.isStale || !cameraChannel.hasEverReceived} /> */}
+
                         <h2 className="text-xl font-semibold flex items-center gap-3 mb-4">
                             <Camera className="text-violet-500/80" size={20} />
                             <span className="text-slate-800">Camera Status</span>
@@ -1237,12 +1083,10 @@ const Dashboard: React.FC = () => {
 
                         <div className="grid grid-cols-2 gap-3">
                             {(["left", "right"] as const).map((side) => {
-                                const cam = data.cameras[side];
+                                const cam = cameraChannel.value[side];
                                 return (
                                     <div key={side} className="bg-blue-50/50 p-3 rounded-lg border border-blue-200/30">
-                                        <div className="text-slate-700 text-base font-semibold mb-0.5 capitalize">
-                                            {side} Camera
-                                        </div>
+                                        <div className="text-slate-700 text-base font-semibold mb-0.5 capitalize">{side} Camera</div>
                                         <div className="flex items-center gap-1.5">
                                             <div className={`w-2 h-2 rounded-full ${cam.connected ? "bg-emerald-500" : "bg-red-500"}`} />
                                             <span className={`text-xs font-medium ${cam.connected ? "text-emerald-600" : "text-red-600"}`}>
@@ -1251,23 +1095,18 @@ const Dashboard: React.FC = () => {
                                         </div>
                                         <div className="mt-2 space-y-1">
                                             {[
-                                                { label: "USB Speed", value: cam.usb_speed || "Unknown", conditional: false },
-                                                { label: "Profiles",  value: !cam.connected ? "Unknown" : cam.profiles_ok ? "OK" : "Issue", conditional: true, ok: cam.profiles_ok },
-                                                { label: "Frames",    value: !cam.connected ? "Unknown" : cam.frames_ok   ? "OK" : "Issue", conditional: true, ok: cam.frames_ok   },
+                                                { label: "USB Speed", value: cam.usb_speed || "—",  conditional: false },
+                                                { label: "Profiles",  value: !cam.connected ? "—" : cam.profiles_ok ? "OK" : "Issue", conditional: true, ok: cam.profiles_ok },
+                                                { label: "Frames",    value: !cam.connected ? "—" : cam.frames_ok   ? "OK" : "Issue", conditional: true, ok: cam.frames_ok   },
                                             ].map(({ label, value, conditional, ok }) => (
                                                 <div key={label} className="flex justify-between text-xs">
                                                     <span className="text-slate-500">{label}:</span>
-                                                    <span
-                                                        className={`font-medium ${
-                                                            !conditional
-                                                                ? "text-slate-900"
-                                                                : !cam.connected
-                                                                  ? "text-slate-400"
-                                                                  : ok
-                                                                    ? "text-emerald-600"
-                                                                    : "text-red-600"
-                                                        }`}
-                                                    >
+                                                    <span className={`font-medium ${
+                                                        !conditional         ? "text-slate-900"
+                                                        : !cam.connected     ? "text-slate-400"
+                                                        : ok                 ? "text-emerald-600"
+                                                        :                      "text-red-600"
+                                                    }`}>
                                                         {value}
                                                     </span>
                                                 </div>
@@ -1278,24 +1117,30 @@ const Dashboard: React.FC = () => {
                             })}
                         </div>
 
-                        {/* CAN / Arm Status */}
-                        <div className="mt-4 pt-4 border-t border-slate-100">
-                            <h3 className="font-medium text-slate-800 flex items-center gap-2 mb-3">
+                        {/* ── CAN / Arm Status ── */}
+                        <div className="relative mt-4 pt-4 border-t border-slate-100">
+                            {/* Separate overlay for CAN section only */}
+                            {/* <StaleOverlay show={canChannel.isStale || !canChannel.hasEverReceived} /> */}
+
+                            <h3 className="font-medium text-slate-800 flex items-center gap-2 mb-1">
                                 <Handshake className="text-indigo-500" size={20} />
                                 Arm Status
                             </h3>
+
+                            {/* Arm temperature row */}
+
                             <div className="grid grid-cols-2 gap-2">
                                 {(["can0", "can1"] as const).map((can) => (
                                     <div
                                         key={can}
-                                        className={`p-3 rounded-lg border transition-all ${data.canStatus[can] ? "bg-emerald-50/60 border-emerald-200/50" : "bg-slate-50/60 border-slate-200/50"}`}
+                                        className={`p-3 rounded-lg border transition-all ${canChannel.value[can] ? "bg-emerald-50/60 border-emerald-200/50" : "bg-slate-50/60 border-slate-200/50"}`}
                                     >
                                         <div className="flex items-center justify-between mb-1">
                                             <span className="text-xs font-semibold text-slate-700 uppercase">{can}</span>
-                                            <div className={`w-2 h-2 rounded-full ${data.canStatus[can] ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
+                                            <div className={`w-2 h-2 rounded-full ${canChannel.value[can] ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
                                         </div>
-                                        <span className={`text-sm font-medium ${data.canStatus[can] ? "text-emerald-700" : "text-slate-600"}`}>
-                                            {data.canStatus[can] ? "Online" : "Offline"}
+                                        <span className={`text-sm font-medium ${canChannel.value[can] ? "text-emerald-700" : "text-slate-600"}`}>
+                                            {canChannel.value[can] ? "Online" : "Offline"}
                                         </span>
                                     </div>
                                 ))}

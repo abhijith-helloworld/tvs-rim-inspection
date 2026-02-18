@@ -199,7 +199,6 @@ function DashboardContent() {
                     `${API_BASE_URL}/robots/${robotId}/schedules/`,
                 );
                 if (!response.ok) throw new Error("Failed to fetch schedules");
-
                 const data = await response.json();
                 if (data.success && data.data.status_totals) {
                     setStatusTotals(data.data.status_totals);

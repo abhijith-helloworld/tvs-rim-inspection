@@ -39,15 +39,17 @@ interface Props {
     totalPages: number;
     onPageChange: (page: number) => void;
     totalCount: number;
+    pageSize?: number;
 }
 
-export default function UsersTable({ 
-    users, 
-    setUsers, 
-    currentPage, 
-    totalPages, 
+export default function UsersTable({
+    users,
+    setUsers,
+    currentPage,
+    totalPages,
     onPageChange,
-    totalCount 
+    totalCount,
+    pageSize = 10,
 }: Props) {
     const [updatingId, setUpdatingId] = React.useState<number | null>(null);
     const [availableRobots, setAvailableRobots] = React.useState<Robot[]>([]);
@@ -62,27 +64,15 @@ export default function UsersTable({
     const updateVerify = async (userId: number, value: boolean) => {
         try {
             setUpdatingId(userId);
-
             await fetchWithAuth(`${API_BASE_URL}/accounts/users/${userId}/`, {
                 method: "PATCH",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    is_verified: value,
-                }),
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ is_verified: value }),
             });
-
             setUsers((prev) =>
                 prev.map((u) =>
                     u.id === userId
-                        ? {
-                              ...u,
-                              profile: {
-                                  ...(u.profile || {}),
-                                  is_verified: value,
-                              },
-                          }
+                        ? { ...u, profile: { ...(u.profile || {}), is_verified: value } }
                         : u,
                 ),
             );
@@ -98,12 +88,10 @@ export default function UsersTable({
             setLoadingRobots(true);
             const res = await fetchWithAuth(`${API_BASE_URL}/robots/`);
             const json = await res.json();
-
             if (json.results?.success) {
-                const activeRobots = json.results.data.filter(
-                    (robot: Robot) => robot.is_active,
+                setAvailableRobots(
+                    json.results.data.filter((robot: Robot) => robot.is_active),
                 );
-                setAvailableRobots(activeRobots);
             }
         } catch (err) {
             console.error("Fetch robots error:", err);
@@ -119,50 +107,31 @@ export default function UsersTable({
         } else {
             setActiveDropdown(userId);
             const user = users.find((u) => u.id === userId);
-            const currentRobots = (user?.assigned_robots || []).map((r) => r.robo_id);
-            setSelectedRobotIds(currentRobots);
-            if (availableRobots.length === 0) {
-                fetchRobots();
-            }
+            setSelectedRobotIds((user?.assigned_robots || []).map((r) => r.robo_id));
+            if (availableRobots.length === 0) fetchRobots();
         }
     };
 
     const toggleRobotSelection = (robotId: string) => {
-        setSelectedRobotIds((prev) => {
-            if (prev.includes(robotId)) {
-                return prev.filter((id) => id !== robotId);
-            } else {
-                return [...prev, robotId];
-            }
-        });
+        setSelectedRobotIds((prev) =>
+            prev.includes(robotId)
+                ? prev.filter((id) => id !== robotId)
+                : [...prev, robotId],
+        );
     };
 
     const assignRobots = async (userId: number) => {
         try {
             setUpdatingId(userId);
-
-            await fetchWithAuth(
-                `${API_BASE_URL}/accounts/users/assign-robots/`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        user_id: userId,
-                        robot_ids: selectedRobotIds,
-                    }),
-                },
-            );
-            const res = await fetchWithAuth(`${API_BASE_URL}/accounts/users/?page=${currentPage}`);
-            const json = await res.json();
-
-            if (json.results?.success) {
-                setUsers(json.results.data);
-            }
-
+            await fetchWithAuth(`${API_BASE_URL}/accounts/users/assign-robots/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: userId, robot_ids: selectedRobotIds }),
+            });
             setActiveDropdown(null);
             setSelectedRobotIds([]);
+            // Delegate refetch to parent — avoids stale totalPages issue
+            onPageChange(currentPage);
         } catch (err) {
             console.error("Assign robots error:", err);
         } finally {
@@ -173,21 +142,11 @@ export default function UsersTable({
     const removeRobot = async (userId: number, robotId: string) => {
         try {
             setUpdatingId(userId);
-
-            await fetchWithAuth(
-                `${API_BASE_URL}/accounts/users/remove-robots/`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        user_id: userId,
-                        robot_ids: [robotId],
-                    }),
-                },
-            );
-
+            await fetchWithAuth(`${API_BASE_URL}/accounts/users/remove-robots/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: userId, robot_ids: [robotId] }),
+            });
             setUsers((prev) =>
                 prev.map((u) =>
                     u.id === userId
@@ -207,8 +166,9 @@ export default function UsersTable({
         }
     };
 
-    const startIndex = (currentPage - 1) * 8 + 1;
-    const endIndex = Math.min(currentPage * 8, totalCount);
+    // ✅ Uses pageSize prop — no more hardcoded 8
+    const startIndex = (currentPage - 1) * pageSize + 1;
+    const endIndex = Math.min(currentPage * pageSize, totalCount);
 
     return (
         <div className="bg-white rounded-lg overflow-hidden">
@@ -273,7 +233,7 @@ export default function UsersTable({
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50">
-                                                <div className={`w-2 h-2 rounded-full ${user.is_active ? "bg-emerald-500" : "bg-red-500"}`}></div>
+                                                <div className={`w-2 h-2 rounded-full ${user.is_active ? "bg-emerald-500" : "bg-red-500"}`} />
                                                 <span className={`text-xs font-medium ${user.is_active ? "text-emerald-700" : "text-red-700"}`}>
                                                     {user.is_active ? "Active" : "Inactive"}
                                                 </span>
@@ -291,7 +251,10 @@ export default function UsersTable({
                                             <div className="flex flex-wrap gap-1.5">
                                                 {robots.length > 0 ? (
                                                     robots.map((robot) => (
-                                                        <span key={robot.robo_id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                                        <span
+                                                            key={robot.robo_id}
+                                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100"
+                                                        >
                                                             {robot.name}
                                                             <button
                                                                 onClick={() => removeRobot(user.id, robot.robo_id)}
@@ -421,9 +384,13 @@ export default function UsersTable({
                 <div className="border-t border-gray-100 px-6 py-4 bg-gray-50/30">
                     <div className="flex items-center justify-between">
                         <div className="text-sm text-gray-600">
-                            Showing <span className="font-semibold text-gray-900">{startIndex}</span> to{" "}
-                            <span className="font-semibold text-gray-900">{endIndex}</span> of{" "}
-                            <span className="font-semibold text-gray-900">{totalCount}</span> users
+                            Showing{" "}
+                            <span className="font-semibold text-gray-900">{startIndex}</span>{" "}
+                            to{" "}
+                            <span className="font-semibold text-gray-900">{endIndex}</span>{" "}
+                            of{" "}
+                            <span className="font-semibold text-gray-900">{totalCount}</span>{" "}
+                            users
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -436,39 +403,44 @@ export default function UsersTable({
                             </button>
 
                             <div className="flex items-center gap-1">
-                                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
-                                    const showPage =
-                                        page === 1 ||
-                                        page === totalPages ||
-                                        (page >= currentPage - 1 && page <= currentPage + 1);
+                                {(() => {
+                                    const items: (number | "left-dots" | "right-dots")[] = [];
 
-                                    const showEllipsisBefore = page === currentPage - 2 && currentPage > 3;
-                                    const showEllipsisAfter = page === currentPage + 2 && currentPage < totalPages - 2;
-
-                                    if (showEllipsisBefore || showEllipsisAfter) {
-                                        return (
-                                            <span key={page} className="px-2 text-gray-500">
-                                                ...
-                                            </span>
-                                        );
+                                    if (totalPages <= 7) {
+                                        for (let i = 1; i <= totalPages; i++) items.push(i);
+                                    } else {
+                                        items.push(1);
+                                        if (currentPage > 3) items.push("left-dots");
+                                        const start = Math.max(2, currentPage - 1);
+                                        const end = Math.min(totalPages - 1, currentPage + 1);
+                                        for (let i = start; i <= end; i++) items.push(i);
+                                        if (currentPage < totalPages - 2) items.push("right-dots");
+                                        items.push(totalPages);
                                     }
 
-                                    if (!showPage) return null;
-
-                                    return (
-                                        <button
-                                            key={page}
-                                            onClick={() => onPageChange(page)}
-                                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                                                currentPage === page
-                                                    ? "bg-indigo-600 text-white"
-                                                    : "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            {page}
-                                        </button>
-                                    );
-                                })}
+                                    return items.map((item) => {
+                                        if (item === "left-dots" || item === "right-dots") {
+                                            return (
+                                                <span key={item} className="px-2 text-gray-400 select-none">
+                                                    …
+                                                </span>
+                                            );
+                                        }
+                                        return (
+                                            <button
+                                                key={item}
+                                                onClick={() => onPageChange(item)}
+                                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                                                    currentPage === item
+                                                        ? "bg-indigo-600 text-white"
+                                                        : "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50"
+                                                }`}
+                                            >
+                                                {item}
+                                            </button>
+                                        );
+                                    });
+                                })()}
                             </div>
 
                             <button

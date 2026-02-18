@@ -63,6 +63,21 @@ interface ArmStatusData {
     err_code: number;
 }
 
+interface BaseStatus {
+    hasDepthCameraDisconnected: boolean;
+    hasError: boolean;
+    hasFatal: boolean;
+    hasLidarDisconnected: boolean;
+    hasSdpDisconnected: boolean;
+    hasSystemEmergencyStop: boolean;
+    hasWarning: boolean;
+}
+
+interface RobotErrors {
+    messages: string[];
+    base_status: BaseStatus;
+}
+
 interface WSData {
     battery?: BatteryInfo;
     location?: string;
@@ -80,7 +95,8 @@ interface WSData {
         left?: JointStatusData[];
         right?: JointStatusData[];
     };
-    lastUpdated?: number; // Timestamp of last update
+    robot_errors?: RobotErrors;
+    lastUpdated?: number;
 }
 
 interface EventTimestamps {
@@ -90,6 +106,7 @@ interface EventTimestamps {
     robot_joint_status?: number;
     can_status?: number;
     battery_information?: number;
+    robot_errors?: number;
 }
 
 export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
@@ -100,12 +117,11 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
     const timeoutCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL;
-    const TIMEOUT_DURATION = 2000; // 2 seconds
+    const TIMEOUT_DURATION = 2000;
 
     /* ================= Load Persisted Data ================= */
     useEffect(() => {
         if (isOpen && robot?.robo_id) {
-            // Load last known data from localStorage
             const savedDataKey = `robot_${robot.robo_id}_last_data`;
             const savedData = localStorage.getItem(savedDataKey);
 
@@ -125,7 +141,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
         if (robot?.robo_id && Object.keys(wsData).length > 0) {
             const savedDataKey = `robot_${robot.robo_id}_last_data`;
             try {
-                // Add timestamp to track when data was last updated
                 const dataToSave = {
                     ...wsData,
                     lastUpdated: Date.now(),
@@ -140,7 +155,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
     /* ================= Timeout Check for Stale Data ================= */
     useEffect(() => {
         if (!wsConnected) {
-            // Clear interval when disconnected
             if (timeoutCheckIntervalRef.current) {
                 clearInterval(timeoutCheckIntervalRef.current);
                 timeoutCheckIntervalRef.current = null;
@@ -148,18 +162,17 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
             return;
         }
 
-        // Check every 500ms for stale data
         timeoutCheckIntervalRef.current = setInterval(() => {
             const now = Date.now();
-            
+
             setWsData((prev) => {
                 let updated = { ...prev };
                 let hasChanges = false;
 
-                // Check camera_status_update timeout
                 if (
                     eventTimestampsRef.current.camera_status_update &&
-                    now - eventTimestampsRef.current.camera_status_update > TIMEOUT_DURATION
+                    now - eventTimestampsRef.current.camera_status_update >
+                        TIMEOUT_DURATION
                 ) {
                     if (updated.cameras || updated.location) {
                         updated.cameras = undefined;
@@ -169,10 +182,10 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     }
                 }
 
-                // Check robot_joint_telemetry timeout
                 if (
                     eventTimestampsRef.current.robot_joint_telemetry &&
-                    now - eventTimestampsRef.current.robot_joint_telemetry > TIMEOUT_DURATION
+                    now - eventTimestampsRef.current.robot_joint_telemetry >
+                        TIMEOUT_DURATION
                 ) {
                     if (updated.arm_joint_states) {
                         updated.arm_joint_states = undefined;
@@ -181,10 +194,10 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     }
                 }
 
-                // Check robot_arm_status timeout
                 if (
                     eventTimestampsRef.current.robot_arm_status &&
-                    now - eventTimestampsRef.current.robot_arm_status > TIMEOUT_DURATION
+                    now - eventTimestampsRef.current.robot_arm_status >
+                        TIMEOUT_DURATION
                 ) {
                     if (updated.arm_status) {
                         updated.arm_status = undefined;
@@ -193,10 +206,10 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     }
                 }
 
-                // Check robot_joint_status timeout
                 if (
                     eventTimestampsRef.current.robot_joint_status &&
-                    now - eventTimestampsRef.current.robot_joint_status > TIMEOUT_DURATION
+                    now - eventTimestampsRef.current.robot_joint_status >
+                        TIMEOUT_DURATION
                 ) {
                     if (updated.robot_joint_status) {
                         updated.robot_joint_status = undefined;
@@ -205,10 +218,10 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     }
                 }
 
-                // Check can_status timeout
                 if (
                     eventTimestampsRef.current.can_status &&
-                    now - eventTimestampsRef.current.can_status > TIMEOUT_DURATION
+                    now - eventTimestampsRef.current.can_status >
+                        TIMEOUT_DURATION
                 ) {
                     if (updated.can_status) {
                         updated.can_status = undefined;
@@ -217,15 +230,27 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     }
                 }
 
-                // Check battery_information timeout
                 if (
                     eventTimestampsRef.current.battery_information &&
-                    now - eventTimestampsRef.current.battery_information > TIMEOUT_DURATION
+                    now - eventTimestampsRef.current.battery_information >
+                        TIMEOUT_DURATION
                 ) {
                     if (updated.battery) {
                         updated.battery = undefined;
                         hasChanges = true;
                         delete eventTimestampsRef.current.battery_information;
+                    }
+                }
+
+                if (
+                    eventTimestampsRef.current.robot_errors &&
+                    now - eventTimestampsRef.current.robot_errors >
+                        TIMEOUT_DURATION
+                ) {
+                    if (updated.robot_errors) {
+                        updated.robot_errors = undefined;
+                        hasChanges = true;
+                        delete eventTimestampsRef.current.robot_errors;
                     }
                 }
 
@@ -245,7 +270,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
         if (!isOpen || !robot?.robo_id) {
             setWsConnected(false);
             setWsError(false);
-            // Clear all timestamps
             eventTimestampsRef.current = {};
             return;
         }
@@ -267,7 +291,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 /* 🔋 Battery Update */
                 if (payload.event === "battery_information") {
                     eventTimestampsRef.current.battery_information = now;
-                    
+
                     const batteryData: BatteryInfo = {
                         soc: Number(payload.data?.soc) || 0,
                         voltage: Number(payload.data?.voltage) || 0,
@@ -288,7 +312,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 /* 📍 Location & 📷 Camera Update */
                 if (payload.event === "camera_status_update") {
                     eventTimestampsRef.current.camera_status_update = now;
-                    
+
                     setWsData((prev) => {
                         const newCameras = {
                             left: {
@@ -343,7 +367,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 /* 🔄 Robot Joint Telemetry */
                 if (payload.event === "robot_joint_telemetry") {
                     eventTimestampsRef.current.robot_joint_telemetry = now;
-                    
+
                     const arm = payload.data?.arm;
                     const joints: JointData[] = payload.data?.joints || [];
 
@@ -366,7 +390,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 /* 🦾 Robot Arm Status */
                 if (payload.event === "robot_arm_status") {
                     eventTimestampsRef.current.robot_arm_status = now;
-                    
+
                     const armData: ArmStatusData = payload.data;
 
                     setWsData((prev) => ({
@@ -381,7 +405,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 /* 🔗 Robot Joint Status */
                 if (payload.event === "robot_joint_status") {
                     eventTimestampsRef.current.robot_joint_status = now;
-                    
+
                     const arm = payload.data?.arm;
                     const joints: JointStatusData[] =
                         payload.data?.joints || [];
@@ -398,10 +422,20 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 /* 📡 CAN Status */
                 if (payload.event === "can_status") {
                     eventTimestampsRef.current.can_status = now;
-                    
+
                     setWsData((prev) => ({
                         ...prev,
                         can_status: payload.data,
+                    }));
+                }
+
+                /* 🚨 Robot Errors */
+                if (payload.event === "robot_errors") {
+                    eventTimestampsRef.current.robot_errors = now;
+
+                    setWsData((prev) => ({
+                        ...prev,
+                        robot_errors: payload.data,
                     }));
                 }
             } catch (err) {
@@ -473,11 +507,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
         return "text-emerald-600";
     };
 
-    const getStatusIndicatorColor = (status: string) => {
-        if (status === "OK") return "bg-emerald-50 text-emerald-700";
-        return "bg-red-50 text-red-700";
-    };
-
     const formatLastUpdated = (timestamp?: number) => {
         if (!timestamp) return null;
         const now = Date.now();
@@ -494,6 +523,19 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
         return "just now";
     };
 
+    const getErrorFlagColor = (key: string) => {
+        if (key === "hasFatal" || key === "hasSystemEmergencyStop")
+            return "bg-red-100 text-red-700";
+        if (key === "hasError") return "bg-orange-100 text-orange-700";
+        return "bg-amber-100 text-amber-700";
+    };
+
+    const formatFlagLabel = (key: string) =>
+        key
+            .replace(/^has/, "")
+            .replace(/([A-Z])/g, " $1")
+            .trim();
+
     /* ================= Live Values ================= */
 
     const liveBattery = wsData?.battery?.soc ?? robot.battery_level;
@@ -504,6 +546,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
     const canStatus = wsData?.can_status;
     const armStatus = wsData?.arm_status;
     const robotJointStatus = wsData?.robot_joint_status;
+    const robotErrors = wsData?.robot_errors;
     const lastUpdatedTime = wsData?.lastUpdated;
 
     /* ================= Empty State Component ================= */
@@ -523,7 +566,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 onClick={onClose}
             />
 
-            {/* Modal - Full screen style */}
+            {/* Modal */}
             <div className="relative w-full max-w-6xl max-h-[90vh] overflow-y-auto bg-white rounded-xl shadow-2xl">
                 {/* Header */}
                 <div className="sticky top-0 z-10 p-6 bg-white border-b border-gray-200">
@@ -557,22 +600,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                     {/* Status Badges */}
                     <div className="flex items-center gap-3 flex-wrap">
-                        <span
-                            className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(robot.status)}`}
-                        >
-                            {robot.status.charAt(0).toUpperCase() +
-                                robot.status.slice(1)}
-                        </span>
-
-                        <span
-                            className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                robot.is_active
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                    : "bg-gray-50 text-gray-600 border border-gray-200"
-                            }`}
-                        >
-                            {robot.is_active ? "Active" : "Inactive"}
-                        </span>
 
                         <span
                             className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -584,13 +611,12 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                             }`}
                         >
                             {wsConnected
-                                ? "Live"
+                                ? "Online"
                                 : wsError
                                   ? "Connection Error"
                                   : "Connecting..."}
                         </span>
 
-                        {/* Last Updated Badge */}
                         {!wsConnected && lastUpdatedTime && (
                             <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
                                 Cached: {formatLastUpdated(lastUpdatedTime)}
@@ -599,7 +625,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     </div>
                 </div>
 
-                {/* Body - Two Column Layout */}
+                {/* Body */}
                 <div className="p-6">
                     {/* Connection Error */}
                     {wsError && (
@@ -617,7 +643,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                         </div>
                     )}
 
-                    {/* Showing Cached Data Notice */}
+                    {/* Cached Data Notice */}
                     {!wsConnected &&
                         !wsError &&
                         Object.keys(wsData).length > 0 &&
@@ -635,7 +661,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                         )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Left Column */}
+                        {/* ==================== Left Column ==================== */}
                         <div className="space-y-4">
                             {/* Basic Info */}
                             <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
@@ -669,6 +695,98 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Robot Errors */}
+                            {robotErrors ? (
+                                <div
+                                    className={`rounded-lg p-4 border ${
+                                        robotErrors.base_status.hasFatal ||
+                                        robotErrors.base_status
+                                            .hasSystemEmergencyStop
+                                            ? "bg-red-50 border-red-300"
+                                            : robotErrors.base_status.hasError
+                                              ? "bg-orange-50 border-orange-300"
+                                              : robotErrors.base_status
+                                                      .hasWarning
+                                                ? "bg-amber-50 border-amber-300"
+                                                : "bg-gray-50 border-gray-200"
+                                    }`}
+                                >
+                                    <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                                        Robot Errors
+                                    </h3>
+
+                                    {/* All Base Status Flags */}
+                                    <div className="grid grid-cols-2 gap-2 mb-3">
+                                        {Object.entries(
+                                            robotErrors.base_status,
+                                        ).map(([key, value]) => (
+                                            <div
+                                                key={key}
+                                                className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs ${
+                                                    value
+                                                        ? key === "hasFatal" ||
+                                                          key ===
+                                                              "hasSystemEmergencyStop"
+                                                            ? "bg-red-100 border-red-300 text-red-700"
+                                                            : key === "hasError"
+                                                              ? "bg-orange-100 border-orange-300 text-orange-700"
+                                                              : "bg-amber-100 border-amber-300 text-amber-700"
+                                                        : "bg-white border-gray-200 text-gray-400"
+                                                }`}
+                                            >
+                                                <span className="font-medium">
+                                                    {formatFlagLabel(key)}
+                                                </span>
+                                                <span
+                                                    className={`font-bold text-xs ${
+                                                        value
+                                                            ? "text-current"
+                                                            : "text-emerald-500"
+                                                    }`}
+                                                >
+                                                    {value ? "YES" : "OK"}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Error Messages */}
+                                    <div className="pt-3 border-t border-gray-200">
+                                        <p className="text-xs font-medium text-gray-600 mb-1.5">
+                                            Messages
+                                        </p>
+                                        {robotErrors.messages.length > 0 ? (
+                                            <div className="space-y-1">
+                                                {robotErrors.messages.map(
+                                                    (msg, i) => (
+                                                        <div
+                                                            key={i}
+                                                            className="flex items-start gap-2 text-xs text-gray-700 bg-white rounded px-2 py-1.5 border border-gray-200"
+                                                        >
+                                                            <span className="text-orange-500 mt-0.5 shrink-0">
+                                                                ⚠
+                                                            </span>
+                                                            <span>{msg}</span>
+                                                        </div>
+                                                    ),
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-gray-400">
+                                                No error messages.
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                    <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                                        Robot Errors
+                                    </h3>
+                                    <EmptyState message="No error data available" />
+                                </div>
+                            )}
 
                             {/* Battery */}
                             {liveBattery !== undefined ? (
@@ -933,7 +1051,7 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                             )}
                         </div>
 
-                        {/* Right Column */}
+                        {/* ==================== Right Column ==================== */}
                         <div className="space-y-4">
                             {/* Arm Status */}
                             {armStatus &&

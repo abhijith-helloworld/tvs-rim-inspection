@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
     Cpu,
     Disc,
@@ -16,7 +16,9 @@ import {
     type LucideIcon,
 } from "lucide-react";
 
-/* ================= TYPES ================= */
+/* ================================================================
+   TYPES
+   ================================================================ */
 
 interface BatteryStatus {
     level: number;
@@ -43,21 +45,38 @@ interface RobotData {
 }
 
 interface RobotDashboardHeaderProps {
-    /** Page title shown in the gradient text — pass any string per page */
     title: string;
-    /** Subtitle under the title. Defaults to "Robot ID: {robotData.name}" if not passed */
     subtitle?: string;
-    /** Lucide icon left of the title. Defaults to Cpu if not passed */
     icon?: LucideIcon;
-
     robotData: RobotData | null;
     battery: BatteryStatus;
+    /**
+     * robotStatus: the latest value pushed from the dashboard via the
+     * "robot_status" WebSocket event.  The header will auto-reset every
+     * field back to false after 3 seconds of silence (no new event).
+     */
     robotStatus: RobotStatus;
     wsConnected: boolean;
     time: string;
+    lastWsEvent?: string | null;
 }
 
-/* ================= BATTERY INDICATOR ================= */
+/* ================================================================
+   CONSTANTS
+   ================================================================ */
+
+const DEFAULT_ROBOT_STATUS: RobotStatus = {
+    break_status:     false,
+    emergency_status: false,
+    Arm_moving:       false,
+};
+
+/** ms of silence before resetting robot_status to all-false */
+const ROBOT_STATUS_TIMEOUT_MS = 3000;
+
+/* ================================================================
+   BATTERY INDICATOR
+   ================================================================ */
 
 const BatteryIndicator = ({
     level,
@@ -77,7 +96,7 @@ const BatteryIndicator = ({
         : level <= 65 ? BatteryMedium
         : BatteryFull;
 
-    const colorScheme = isCharging
+    const cs = isCharging
         ? { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", icon: "text-emerald-500", dot: "bg-emerald-500" }
         : isBelowMin
           ? { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", icon: "text-rose-500", dot: "bg-rose-500" }
@@ -87,16 +106,16 @@ const BatteryIndicator = ({
 
     return (
         <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${colorScheme.bg} ${colorScheme.border} ${colorScheme.text}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${cs.bg} ${cs.border} ${cs.text}`}
             title={`Min required: ${minimumCharge}%`}
         >
             <div className="relative flex items-center">
                 {isCharging
-                    ? <Zap className={`w-4 h-4 ${colorScheme.icon}`} />
-                    : <Icon className={`w-4 h-4 ${colorScheme.icon}`} />
+                    ? <Zap className={`w-4 h-4 ${cs.icon}`} />
+                    : <Icon className={`w-4 h-4 ${cs.icon}`} />
                 }
                 {isBelowMin && !isCharging && (
-                    <span className={`absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full ${colorScheme.dot} animate-ping`} />
+                    <span className={`absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full ${cs.dot} animate-ping`} />
                 )}
             </div>
             <div className="flex flex-col leading-none gap-0.5">
@@ -107,7 +126,9 @@ const BatteryIndicator = ({
     );
 };
 
-/* ================= CONNECTION STATUS ================= */
+/* ================================================================
+   CONNECTION STATUS
+   ================================================================ */
 
 const ConnectionStatus = ({ wsConnected }: { wsConnected: boolean }) => (
     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${
@@ -120,53 +141,143 @@ const ConnectionStatus = ({ wsConnected }: { wsConnected: boolean }) => (
     </div>
 );
 
-/* ================= ROBOT STATUS PANEL ================= */
+/* ================================================================
+   ROBOT STATUS PANEL
 
-const RobotStatusPanel = ({ robotStatus }: { robotStatus: RobotStatus }) => (
-    <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm w-full lg:w-auto">
-        <div className="flex items-center gap-2">
-            <div className="relative">
-                <Disc className={`w-5 h-5 ${robotStatus.break_status ? "text-rose-500" : "text-slate-400"}`} />
-                {robotStatus.break_status && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
-                )}
+   Behaviour:
+   - Receives `robotStatus` prop from parent (latest WS push).
+   - Whenever a new non-default value arrives the display updates
+     immediately and a 3-second idle timer starts.
+   - If no new event arrives within 3 seconds the display resets
+     to DEFAULT_ROBOT_STATUS (all false / 0).
+   - Fields that transition to `true` blink once for ~600 ms.
+   ================================================================ */
+
+const RobotStatusPanel = ({
+    robotStatus: incoming,
+}: {
+    robotStatus: RobotStatus;
+}) => {
+    /* What the UI actually renders */
+    const [display, setDisplay] = useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
+
+    /* Which fields are currently playing the blink animation */
+    const [blinking, setBlinking] = useState<Record<keyof RobotStatus, boolean>>({
+        break_status: false,
+        emergency_status: false,
+        Arm_moving: false,
+    });
+
+    /* 3-second idle timer that resets display to defaults */
+    const resetTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    /* Per-field blink-clear timers */
+    const blinkTimers  = useRef<Partial<Record<keyof RobotStatus, ReturnType<typeof setTimeout>>>>({});
+
+    /* Stable update callback — same pattern as useWsChannel */
+    const applyIncoming = useCallback((next: RobotStatus) => {
+        /* 1. Update display immediately */
+        setDisplay(next);
+
+        /* 2. Blink fields that just became true */
+        const fields: (keyof RobotStatus)[] = ["break_status", "emergency_status", "Arm_moving"];
+        fields.forEach((f) => {
+            if (next[f]) {
+                setBlinking((prev) => ({ ...prev, [f]: true }));
+                if (blinkTimers.current[f]) clearTimeout(blinkTimers.current[f]);
+                blinkTimers.current[f] = setTimeout(() => {
+                    setBlinking((prev) => ({ ...prev, [f]: false }));
+                }, 600);
+            }
+        });
+
+        /* 3. (Re)start the 3-second idle reset timer */
+        if (resetTimer.current) clearTimeout(resetTimer.current);
+        resetTimer.current = setTimeout(() => {
+            setDisplay(DEFAULT_ROBOT_STATUS);
+        }, ROBOT_STATUS_TIMEOUT_MS);
+    }, []);
+
+    /* Fire whenever any field on the incoming prop changes */
+    useEffect(() => {
+        applyIncoming(incoming);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [incoming.break_status, incoming.emergency_status, incoming.Arm_moving]);
+
+    /* Cleanup on unmount */
+    useEffect(() => {
+        return () => {
+            if (resetTimer.current) clearTimeout(resetTimer.current);
+            const fields: (keyof RobotStatus)[] = ["break_status", "emergency_status", "Arm_moving"];
+            fields.forEach((f) => { if (blinkTimers.current[f]) clearTimeout(blinkTimers.current[f]); });
+        };
+    }, []);
+
+    return (
+        <>
+            {/* Blink keyframe — injected once */}
+            <style>{`
+                @keyframes status-blink {
+                    0%,100% { opacity:1; transform:scale(1);    }
+                    25%     { opacity:.2; transform:scale(.92); }
+                    50%     { opacity:1; transform:scale(1.06); }
+                    75%     { opacity:.2; transform:scale(.96); }
+                }
+                .status-blink { animation: status-blink 0.6s ease-in-out 1; }
+            `}</style>
+
+            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm w-full lg:w-auto">
+
+                {/* ── Brake ── */}
+                <div className="flex items-center gap-2">
+                    <div className={`relative ${blinking.break_status ? "status-blink" : ""}`}>
+                        <Disc className={`w-5 h-5 ${display.break_status ? "text-rose-500" : "text-slate-400"}`} />
+                        {display.break_status && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
+                        )}
+                    </div>
+                    <span className={`text-xs font-medium ${display.break_status ? "text-rose-600" : "text-slate-500"}`}>
+                        Brake
+                    </span>
+                </div>
+
+                <div className="w-px h-6 bg-slate-200" />
+
+                {/* ── Emergency ── */}
+                <div className="flex items-center gap-2">
+                    <div className={`relative ${blinking.emergency_status ? "status-blink" : ""}`}>
+                        <AlertCircle className={`w-5 h-5 ${display.emergency_status ? "text-red-600" : "text-slate-400"}`} />
+                        {display.emergency_status && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-600 rounded-full animate-ping" />
+                        )}
+                    </div>
+                    <span className={`text-xs font-medium ${display.emergency_status ? "text-red-700" : "text-slate-500"}`}>
+                        Emergency
+                    </span>
+                </div>
+
+                <div className="w-px h-6 bg-slate-200" />
+
+                {/* ── Arm Moving ── */}
+                <div className="flex items-center gap-2">
+                    <div className={`relative ${blinking.Arm_moving ? "status-blink" : ""}`}>
+                        <Move className={`w-5 h-5 ${display.Arm_moving ? "text-blue-500 animate-pulse" : "text-slate-400"}`} />
+                        {display.Arm_moving && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping" />
+                        )}
+                    </div>
+                    <span className={`text-xs font-medium ${display.Arm_moving ? "text-blue-600" : "text-slate-500"}`}>
+                        Arm Moving
+                    </span>
+                </div>
             </div>
-            <span className={`text-xs font-medium ${robotStatus.break_status ? "text-rose-600" : "text-slate-500"}`}>
-                Brake
-            </span>
-        </div>
+        </>
+    );
+};
 
-        <div className="w-px h-6 bg-slate-200" />
-
-        <div className="flex items-center gap-2">
-            <div className="relative">
-                <AlertCircle className={`w-5 h-5 ${robotStatus.emergency_status ? "text-red-600" : "text-slate-400"}`} />
-                {robotStatus.emergency_status && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-600 rounded-full animate-ping" />
-                )}
-            </div>
-            <span className={`text-xs font-medium ${robotStatus.emergency_status ? "text-red-700" : "text-slate-500"}`}>
-                Emergency
-            </span>
-        </div>
-
-        <div className="w-px h-6 bg-slate-200" />
-
-        <div className="flex items-center gap-2">
-            <div className="relative">
-                <Move className={`w-5 h-5 ${robotStatus.Arm_moving ? "text-blue-500 animate-pulse" : "text-slate-400"}`} />
-                {robotStatus.Arm_moving && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping" />
-                )}
-            </div>
-            <span className={`text-xs font-medium ${robotStatus.Arm_moving ? "text-blue-600" : "text-slate-500"}`}>
-                Arm Moving
-            </span>
-        </div>
-    </div>
-);
-
-/* ================= DATE TIME DISPLAY ================= */
+/* ================================================================
+   DATE TIME DISPLAY
+   ================================================================ */
 
 const DateTimeDisplay = ({ time }: { time: string }) => (
     <div className="text-right w-full lg:w-auto">
@@ -190,7 +301,9 @@ const DateTimeDisplay = ({ time }: { time: string }) => (
     </div>
 );
 
-/* ================= MAIN HEADER COMPONENT ================= */
+/* ================================================================
+   MAIN HEADER COMPONENT
+   ================================================================ */
 
 const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
     title,
@@ -224,15 +337,16 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                 {/* Right-side controls */}
                 <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 w-full lg:w-auto">
                     <ConnectionStatus wsConnected={wsConnected} />
-
                     <BatteryIndicator
                         level={battery.level}
                         status={battery.status}
                         minimumCharge={minimumCharge}
                     />
-
+                    {/*
+                        RobotStatusPanel handles the 3-second timeout internally.
+                        The parent just passes the latest raw value from the WS event.
+                    */}
                     <RobotStatusPanel robotStatus={robotStatus} />
-
                     <DateTimeDisplay time={time} />
                 </div>
             </div>
