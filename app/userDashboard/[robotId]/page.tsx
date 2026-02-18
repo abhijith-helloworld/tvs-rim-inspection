@@ -23,10 +23,6 @@ import {
 } from "lucide-react";
 import RobotDashboardHeader from "@/app/Includes/header";
 
-/* ================================================================
-   SHARED TYPES
-   ================================================================ */
-
 export interface RobotData {
     id: string;
     name: string;
@@ -50,10 +46,6 @@ export interface RobotStatus {
     emergency_status: boolean;
     Arm_moving: boolean;
 }
-
-/* ================================================================
-   OTHER LOCAL TYPES
-   ================================================================ */
 
 interface CameraStatus {
     connected: boolean;
@@ -95,9 +87,7 @@ interface NavigationPayload {
     navigation_style?: "free" | "strict" | "strict_with_autonomous";
 }
 
-/* ================================================================
-   DEFAULT VALUES — restored after 3 s of WS silence per channel
-   ================================================================ */
+// ─── Defaults ────────────────────────────────────────────────────────────────
 
 const DEFAULT_BATTERY: BatteryStatus = {
     level: 0,
@@ -127,18 +117,13 @@ const DEFAULT_CAMERAS = {
 
 const DEFAULT_ARM_TEMPERATURE = 0;
 
-/** ms of WS silence before resetting a channel to its defaults */
 const WS_TIMEOUT_MS = 3000;
 
-/* ================================================================
-   useWsChannel — custom hook
-   - Holds the latest value for one WS event type
-   - Resets to defaultValue after WS_TIMEOUT_MS of silence
-   - Exposes isStale + hasEverReceived for badge / overlay rendering
-   ================================================================ */
+// ─── WebSocket Channel Hook ───────────────────────────────────────────────────
+
 function useWsChannel<T>(defaultValue: T) {
-    const [value, setValue]                   = useState<T>(defaultValue);
-    const [isStale, setIsStale]               = useState(false);
+    const [value, setValue]                     = useState<T>(defaultValue);
+    const [isStale, setIsStale]                 = useState(false);
     const [hasEverReceived, setHasEverReceived] = useState(false);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -150,10 +135,9 @@ function useWsChannel<T>(defaultValue: T) {
 
         timerRef.current = setTimeout(() => {
             setIsStale(true);
-            setValue(defaultValue);          // ← reset to defaults
+            setValue(defaultValue);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
         }, WS_TIMEOUT_MS);
-    // defaultValue is a stable constant object — intentionally excluded
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
@@ -161,9 +145,8 @@ function useWsChannel<T>(defaultValue: T) {
     return { value, isStale, hasEverReceived, update };
 }
 
-/* ================================================================
-   STALE BADGE — Live / Stale / No Signal
-   ================================================================ */
+// ─── StaleBadge ──────────────────────────────────────────────────────────────
+
 const StaleBadge = ({
     isStale,
     hasEverReceived,
@@ -195,10 +178,8 @@ const StaleBadge = ({
     );
 };
 
+// ─── FilterModal ─────────────────────────────────────────────────────────────
 
-/* ================================================================
-   FILTER MODAL
-   ================================================================ */
 const FilterModal = ({
     isOpen,
     onClose,
@@ -298,9 +279,8 @@ const FilterModal = ({
     );
 };
 
-/* ================================================================
-   MAP NOT UPLOADED POPUP
-   ================================================================ */
+// ─── MapNotUploadedPopup ──────────────────────────────────────────────────────
+
 const MapNotUploadedPopup = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
     if (!isOpen) return null;
     return (
@@ -319,9 +299,8 @@ const MapNotUploadedPopup = ({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     );
 };
 
-/* ================================================================
-   LOW BATTERY WARNING POPUP
-   ================================================================ */
+// ─── LowBatteryWarningPopup ───────────────────────────────────────────────────
+
 const LowBatteryWarningPopup = ({
     isOpen, onClose, batteryLevel, minimumThreshold,
 }: {
@@ -350,46 +329,77 @@ const LowBatteryWarningPopup = ({
     );
 };
 
-/* ================================================================
-   MAIN DASHBOARD COMPONENT
-   ================================================================ */
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
 const Dashboard: React.FC = () => {
-    const [robotId, setRobotId]   = useState<string>("");
-    const [roboId, setRoboId]     = useState<string>("");
+    const [robotId, setRobotId]     = useState<string>("");
+    const [roboId, setRoboId]       = useState<string>("");
     const [robotData, setRobotData] = useState<RobotData | null>(null);
-    const [loading, setLoading]   = useState(true);
-    const [error, setError]       = useState<string | null>(null);
+    const [loading, setLoading]     = useState(true);
+    const [error, setError]         = useState<string | null>(null);
+
     const [showFilterModal, setShowFilterModal] = useState(false);
-    const [currentFilter, setCurrentFilter] = useState<FilterData>({
-        filter_type: "month",
-        date: new Date().toISOString().split("T")[0],
+    const [currentFilter, setCurrentFilter] = useState<FilterData>(() => {
+        try {
+            const saved = localStorage.getItem("dashboard_filter");
+            if (saved) return JSON.parse(saved) as FilterData;
+        } catch {}
+        return {
+            filter_type: "week",
+            date: new Date().toISOString().split("T")[0],
+        };
     });
 
-    /* ── navigation ── */
+    // Persist filter to localStorage whenever it changes
+    useEffect(() => {
+        try { localStorage.setItem("dashboard_filter", JSON.stringify(currentFilter)); } catch {}
+    }, [currentFilter]);
+
+    // ── Navigation state ──────────────────────────────────────────────────────
     const [navigationMode, setNavigationMode]   = useState<"stationary" | "autonomous">("stationary");
     const [navigationStyle, setNavigationStyle] = useState<"free" | "strict" | "strict_with_autonomous">("free");
     const [navPatchLoading, setNavPatchLoading] = useState(false);
     const [navPatchError, setNavPatchError]     = useState<string | null>(null);
+    const [navFetchLoading, setNavFetchLoading] = useState(false);
 
-    /* ── autonomous ready ── */
-    const [isAutonomousReady, setIsAutonomousReady]       = useState(false);
-    const [isModeActive, setIsModeActive]                 = useState(false);
+    const [isAutonomousReady, setIsAutonomousReady] = useState(false);
+    const [isModeActive, setIsModeActive]           = useState(false);
     const [showMapNotUploadedPopup, setShowMapNotUploadedPopup] = useState(false);
 
-    /* ── low battery ── */
-    const [showLowBatteryPopup, setShowLowBatteryPopup]     = useState(false);
+    /**
+     * Apply any navigation API / WebSocket payload to all related state in one shot.
+     *
+     * Used by:
+     *   - GET /robots/{id}/navigation/  (on mount + after PATCH)
+     *   - WS event "navigation_update"  (cross-client sync: web ↔ app)
+     *   - WS event "navigation_updated" (robot-side sync: robot → UI)
+     */
+    const applyNavData = useCallback((data: {
+        navigation_mode:  "stationary" | "autonomous";
+        navigation_style: "free" | "strict" | "strict_with_autonomous";
+        autonomous_ready: boolean;
+        mode_active:      boolean;
+    }) => {
+        setNavigationMode(data.navigation_mode);
+        setNavigationStyle(data.navigation_style);
+        setIsAutonomousReady(data.autonomous_ready);
+        setIsModeActive(data.mode_active);
+    }, []);
+
+    // ── Battery warning state ─────────────────────────────────────────────────
+    const [showLowBatteryPopup, setShowLowBatteryPopup]       = useState(false);
     const [lowBatteryAcknowledged, setLowBatteryAcknowledged] = useState(false);
 
-    /* ── location ── */
+    // ── Location state ────────────────────────────────────────────────────────
     const [locationLoading, setLocationLoading] = useState(false);
     const [locations, setLocations]             = useState<string[]>([]);
     const [mapName, setMapName]                 = useState<string | undefined>(undefined);
 
-    /* ── WS connection ── */
+    // ── WebSocket state ───────────────────────────────────────────────────────
     const [wsConnected, setWsConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
 
-    /* ── non-timed-out state ── */
+    // ── Data summaries ────────────────────────────────────────────────────────
     const [inspection, setInspection] = useState<InspectionSummary>({
         total: 0, defected: 0, non_defected: 0,
         approved: 0, human_verified: 0, pending_verification: 0,
@@ -400,21 +410,19 @@ const Dashboard: React.FC = () => {
     const [robotStatus, setRobotStatus] = useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
     const [time, setTime] = useState(new Date().toLocaleTimeString());
 
-    /* ================================================================
-       PER-CHANNEL WS STATE — each resets to defaults after 3 s silence
-       ================================================================ */
+    // ── WebSocket channels ────────────────────────────────────────────────────
     const batteryChannel = useWsChannel<BatteryStatus>(DEFAULT_BATTERY);
     const canChannel     = useWsChannel<CanStatus>(DEFAULT_CAN_STATUS);
     const cameraChannel  = useWsChannel<{ left: CameraStatus; right: CameraStatus }>(DEFAULT_CAMERAS);
     const armTempChannel = useWsChannel<number>(DEFAULT_ARM_TEMPERATURE);
 
-    /* ── Get robot ID from URL ── */
+    // ── Extract robotId from URL ──────────────────────────────────────────────
     useEffect(() => {
         const parts = window.location.pathname.split("/");
         setRobotId(parts[parts.length - 1]);
     }, []);
 
-    /* ── Fetch robot data ── */
+    // ── Fetch robot data ──────────────────────────────────────────────────────
     useEffect(() => {
         if (!robotId) return;
         (async () => {
@@ -437,7 +445,7 @@ const Dashboard: React.FC = () => {
         })();
     }, [robotId]);
 
-    /* ── Low battery check ── */
+    // ── Low battery watcher ───────────────────────────────────────────────────
     useEffect(() => {
         if (!robotData?.minimum_battery_charge) return;
         const { level, status } = batteryChannel.value;
@@ -451,7 +459,7 @@ const Dashboard: React.FC = () => {
         }
     }, [batteryChannel.value.level, batteryChannel.value.status, robotData, lowBatteryAcknowledged]);
 
-    /* ── Fetch filtered schedule + inspection data ── */
+    // ── Fetch schedule / inspection summaries ─────────────────────────────────
     useEffect(() => {
         if (!robotId) return;
         (async () => {
@@ -487,7 +495,7 @@ const Dashboard: React.FC = () => {
         })();
     }, [robotId, currentFilter]);
 
-    /* ── Fetch locations ── */
+    // ── Fetch locations ───────────────────────────────────────────────────────
     const fetchLocations = useCallback(async (id: string) => {
         if (!id) return;
         try {
@@ -507,13 +515,34 @@ const Dashboard: React.FC = () => {
 
     useEffect(() => { if (robotId) fetchLocations(robotId); }, [robotId, fetchLocations]);
 
-    /* ── Clock ── */
+    // ── GET current navigation state (reusable — called on mount + after every PATCH) ──
+    const refetchNavigation = useCallback(async () => {
+        if (!robotId) return;
+        try {
+            setNavFetchLoading(true);
+            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/navigation/`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const result = await res.json();
+            if (result.data) applyNavData(result.data);
+        } catch (err) {
+            console.error("❌ Failed to fetch navigation state:", err);
+        } finally {
+            setNavFetchLoading(false);
+        }
+    }, [robotId, applyNavData]);
+
+    // Call on mount / whenever robotId changes
+    useEffect(() => {
+        refetchNavigation();
+    }, [refetchNavigation]);
+
+    // ── Clock tick ────────────────────────────────────────────────────────────
     useEffect(() => {
         const t = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
         return () => clearInterval(t);
     }, []);
 
-    /* ── Location click via WS ── */
+    // ── Send location via WebSocket ───────────────────────────────────────────
     const handleLocationClick = useCallback((locationName: string) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
             console.warn("⚠️ WS not connected");
@@ -525,54 +554,99 @@ const Dashboard: React.FC = () => {
         }));
     }, [navigationStyle]);
 
-    /* ── PATCH navigation ── */
+    // ── PATCH navigation ──────────────────────────────────────────────────────
+    /**
+     * Calls PATCH /robots/{id}/navigation/ with the desired mode and style.
+     *
+     * IMPORTANT: navigation_style is ALWAYS required by the backend when
+     * mode is "autonomous". We therefore always pass an explicit style —
+     * never rely on a default or omit it — to avoid the 500 error:
+     *   "Navigation style is required when mode is autonomous."
+     *
+     * After every successful PATCH we call refetchNavigation() (GET) so that
+     * autonomous_ready, mode_active, navigation_mode and navigation_style are
+     * always in sync with the server — not with what the PATCH response returned.
+     *
+     * Cross-client sync (web ↔ app) is handled by the WebSocket
+     * `navigation_update` event, which also calls applyNavData().
+     * Robot-side sync is handled by the `navigation_updated` event.
+     */
     const patchNavigation = useCallback(async (
         mode: "stationary" | "autonomous",
+        /** Must be provided when mode === "autonomous". Falls back to current style. */
         style?: "free" | "strict" | "strict_with_autonomous",
     ) => {
         if (!robotId) return;
         setNavPatchLoading(true);
         setNavPatchError(null);
+
+        // Snapshot previous values so we can roll back precisely on failure
+        const prevMode  = navigationMode;
+        const prevStyle = navigationStyle;
+
+        // Build payload.
+        // When autonomous: navigation_style is REQUIRED by the backend.
+        // Resolve style explicitly — never let it be undefined for autonomous.
         const payload: NavigationPayload = { navigation_mode: mode };
-        if (mode === "autonomous" && style) payload.navigation_style = style;
+        if (mode === "autonomous") {
+            payload.navigation_style = style ?? navigationStyle ?? "free";
+        }
+
         try {
             const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/navigation/`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload),
             });
-            if (!res.ok) throw new Error(`PATCH ${res.status}`);
+            if (!res.ok) {
+                const errBody = await res.json().catch(() => ({}));
+                throw new Error(errBody?.message ?? `PATCH ${res.status}`);
+            }
+
+            // Re-fetch from GET to get authoritative state after PATCH.
+            await refetchNavigation();
         } catch (err) {
             console.error(err);
             setNavPatchError("Failed to update navigation");
-            setNavigationMode((p) => (p === "autonomous" ? "stationary" : "autonomous"));
+
+            // Precise rollback to the state before the optimistic update
+            setNavigationMode(prevMode);
+            setNavigationStyle(prevStyle);
         } finally {
             setNavPatchLoading(false);
         }
-    }, [robotId]);
+    }, [robotId, navigationMode, navigationStyle, applyNavData, refetchNavigation]);
 
+    // ── Toggle handler ────────────────────────────────────────────────────────
     const handleToggleNavigation = useCallback(() => {
         if (!isAutonomousReady) { setShowMapNotUploadedPopup(true); return; }
         if (navPatchLoading) return;
+
         const next = navigationMode === "stationary" ? "autonomous" : "stationary";
+
+        // Capture current style synchronously BEFORE any state update
+        const currentStyle = navigationStyle;
+
+        // Optimistic UI update — refetchNavigation() will confirm or revert via GET
         setNavigationMode(next);
-        patchNavigation(next, next === "autonomous" ? navigationStyle : undefined);
+
+        patchNavigation(next, next === "autonomous" ? currentStyle : undefined);
     }, [isAutonomousReady, navPatchLoading, navigationMode, navigationStyle, patchNavigation]);
 
+    // ── Style change handler ──────────────────────────────────────────────────
     const handleStyleChange = useCallback((style: "free" | "strict" | "strict_with_autonomous") => {
         if (navPatchLoading) return;
         setNavigationStyle(style);
         patchNavigation(navigationMode, style);
     }, [navPatchLoading, navigationMode, patchNavigation]);
 
+    // ── Low battery acknowledge ───────────────────────────────────────────────
     const handleLowBatteryClose = useCallback(() => {
         setShowLowBatteryPopup(false);
         setLowBatteryAcknowledged(true);
     }, []);
 
-    /* ================================================================
-       WEBSOCKET
-       ================================================================ */
+    // ── WebSocket connection ──────────────────────────────────────────────────
     useEffect(() => {
         if (!roboId) return;
         let isManualClose = false;
@@ -589,12 +663,12 @@ const Dashboard: React.FC = () => {
                     try {
                         const payload = JSON.parse(event.data as string);
 
-                        /* upload_clicked — no timeout needed */
+                        // ── Map uploaded → refresh locations ──────────────────
                         if (payload.event === "upload_clicked" && payload.data?.status === true) {
                             fetchLocations(robotId);
                         }
 
-                        /* robot_status — no timeout (header handles its own reset) */
+                        // ── Robot status ──────────────────────────────────────
                         if (payload.event === "robot_status") {
                             setRobotStatus({
                                 break_status:     payload.data.break_status     ?? false,
@@ -603,7 +677,7 @@ const Dashboard: React.FC = () => {
                             });
                         }
 
-                        /* ── battery_information → 3 s → DEFAULT_BATTERY ── */
+                        // ── Battery ───────────────────────────────────────────
                         if (payload.event === "battery_information") {
                             const soc     = Number(payload.data?.soc)     || 0;
                             const current = Number(payload.data?.current) || 0;
@@ -625,7 +699,7 @@ const Dashboard: React.FC = () => {
                             });
                         }
 
-                        /* ── can_status → 3 s → DEFAULT_CAN_STATUS ── */
+                        // ── CAN status ────────────────────────────────────────
                         if (payload.event === "can_status") {
                             canChannel.update({
                                 can0: payload.data.can0 ?? false,
@@ -633,7 +707,7 @@ const Dashboard: React.FC = () => {
                             });
                         }
 
-                        /* ── camera_status_update → 3 s → DEFAULT_CAMERAS ── */
+                        // ── Camera status ─────────────────────────────────────
                         if (payload.event === "camera_status_update") {
                             cameraChannel.update({
                                 left: {
@@ -651,15 +725,49 @@ const Dashboard: React.FC = () => {
                             });
                         }
 
-                        /* ── arm_temperature → 3 s → 0 ── */
+                        // ── Arm temperature ───────────────────────────────────
                         if (payload.event === "arm_temperature") {
                             armTempChannel.update(Number(payload.data?.temperature) || 0);
                         }
 
-                        /* autonomous_ready — no timeout */
+                        // ── Autonomous ready (legacy event) ───────────────────
                         if (payload.event === "autonomous_ready") {
                             setIsAutonomousReady(payload.data?.status === true);
                             setIsModeActive(payload.data?.mode_active === true);
+                        }
+
+                        // ── Navigation updated (robot-side sync) ──────────────
+                        // Fired by the robot/backend when navigation state changes
+                        // on the robot's own side. Full state sync — use applyNavData
+                        // so autonomous_ready and mode_active stay in sync too.
+                        if (payload.event === "navigation_updated") {
+                            applyNavData({
+                                navigation_mode:  payload.data?.navigation_mode  ?? "stationary",
+                                navigation_style: payload.data?.navigation_style ?? "free",
+                                autonomous_ready: payload.data?.autonomous_ready ?? false,
+                                mode_active:      payload.data?.mode_active      ?? false,
+                            });
+                        }
+
+                        // ── Mode active ───────────────────────────────────────
+                        // Targeted event fired when the robot confirms the selected
+                        // navigation mode has fully activated. Only updates isModeActive
+                        // rather than replacing the entire navigation state.
+                        if (payload.event === "mode_active") {
+                            setIsModeActive(payload.data?.status === true);
+                        }
+
+                        // ── Navigation update (cross-client sync) ─────────────
+                        // Fired by backend whenever any client (web or app) changes
+                        // navigation mode/style. Keeps both UIs in sync without
+                        // requiring a full page refresh.
+                        if (payload.event === "navigation_update" && payload.data) {
+                            applyNavData({
+                                navigation_mode:  payload.data.navigation_mode  ?? "stationary",
+                                navigation_style: payload.data.navigation_style ?? "free",
+                                autonomous_ready: payload.data.autonomous_ready ?? false,
+                                mode_active:      payload.data.mode_active      ?? false,
+                            });
                         }
                     } catch (err) {
                         console.error("❌ WS parse error:", err);
@@ -685,11 +793,13 @@ const Dashboard: React.FC = () => {
             ws?.close();
             wsRef.current = null;
         };
-    // batteryChannel.update etc. are stable (useCallback with no deps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [roboId, robotId, fetchLocations]);
 
-    /* ── Derived values ── */
+    // ─────────────────────────────────────────────────────────────────────────
+    // Derived values
+    // ─────────────────────────────────────────────────────────────────────────
+
     const defectRate  = inspection.total > 0 ? (inspection.defected / inspection.total) * 100 : 0;
     const successRate = inspection.total > 0 ? ((inspection.total - inspection.defected) / inspection.total) * 100 : 0;
     const isAutonomous = navigationMode === "autonomous";
@@ -704,7 +814,10 @@ const Dashboard: React.FC = () => {
         }
     };
 
-    /* ── Loading / error states ── */
+    // ─────────────────────────────────────────────────────────────────────────
+    // Loading / error states
+    // ─────────────────────────────────────────────────────────────────────────
+
     if (loading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center">
@@ -730,9 +843,10 @@ const Dashboard: React.FC = () => {
         );
     }
 
-    /* ================================================================
-       RENDER
-       ================================================================ */
+    // ─────────────────────────────────────────────────────────────────────────
+    // Render
+    // ─────────────────────────────────────────────────────────────────────────
+
     return (
         <div className="bg-gradient-to-br from-slate-50 to-white text-slate-800 p-6 font-sans w-full">
             <FilterModal
@@ -741,7 +855,10 @@ const Dashboard: React.FC = () => {
                 onApply={setCurrentFilter}
                 currentFilter={currentFilter}
             />
-            <MapNotUploadedPopup isOpen={showMapNotUploadedPopup} onClose={() => setShowMapNotUploadedPopup(false)} />
+            <MapNotUploadedPopup
+                isOpen={showMapNotUploadedPopup}
+                onClose={() => setShowMapNotUploadedPopup(false)}
+            />
             <LowBatteryWarningPopup
                 isOpen={showLowBatteryPopup}
                 onClose={handleLowBatteryClose}
@@ -762,9 +879,7 @@ const Dashboard: React.FC = () => {
 
             <main className="flex flex-col lg:flex-row gap-6 mt-6">
 
-                {/* ══════════════════════════════════
-                    LEFT COLUMN (60%)
-                ══════════════════════════════════ */}
+                {/* ── Left column ─────────────────────────────────────────── */}
                 <div className="lg:w-3/5 space-y-6">
 
                     {/* Defect Analysis */}
@@ -807,12 +922,15 @@ const Dashboard: React.FC = () => {
                                 </div>
                             </div>
                             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-gradient-to-r from-rose-400 to-amber-400" style={{ width: `${defectRate}%` }} />
+                                <div
+                                    className="h-full bg-gradient-to-r from-rose-400 to-amber-400"
+                                    style={{ width: `${defectRate}%` }}
+                                />
                             </div>
                         </div>
                     </div>
 
-                    {/* Go to Schedules */}
+                    {/* Schedule Dashboard CTA */}
                     <div className="group cursor-pointer p-6 bg-gradient-to-br from-white to-gray-50 rounded-2xl border border-gray-100 shadow-sm transition-all duration-300">
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                             <div className="space-y-1">
@@ -882,16 +1000,12 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* ══════════════════════════════════
-                    RIGHT COLUMN (40%)
-                ══════════════════════════════════ */}
+                {/* ── Right column ────────────────────────────────────────── */}
                 <div className="lg:w-2/5 space-y-6">
                     <div className="grid grid-cols-2 gap-6">
 
-                        {/* ── Battery Card ── */}
+                        {/* Battery */}
                         <div className="relative bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-                            {/* <StaleOverlay show={batteryChannel.isStale} /> */}
-
                             <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
                                 <h2 className="text-xl font-semibold flex items-center gap-2">
                                     <Battery className="text-emerald-500/80" size={24} />
@@ -942,14 +1056,14 @@ const Dashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* ── Robot Location Card ── */}
+                        {/* Robot Location / Navigation */}
                         <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-xl font-semibold flex items-center gap-2">
                                     <MapPin className="text-blue-500/80" size={24} />
                                     <span className="text-slate-800">Robot Location</span>
                                 </h2>
-                                {locationLoading && (
+                                {(locationLoading || navFetchLoading) && (
                                     <div className="flex items-center gap-1.5 text-xs text-blue-600">
                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                         <span>Updating...</span>
@@ -957,6 +1071,7 @@ const Dashboard: React.FC = () => {
                                 )}
                             </div>
 
+                            {/* ── Navigation mode toggle ── */}
                             <div className="flex items-center justify-center gap-3 mb-3">
                                 <span className={`text-xs font-semibold transition-colors duration-300 ${!isAutonomous ? "text-slate-800" : "text-slate-400"}`}>
                                     Stationary
@@ -964,23 +1079,26 @@ const Dashboard: React.FC = () => {
                                 <button
                                     type="button"
                                     onClick={handleToggleNavigation}
-                                    disabled={navPatchLoading || !isAutonomousReady}
-                                    className={`relative w-14 h-7 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors duration-300 ${!isAutonomousReady ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${navPatchLoading ? "cursor-wait" : ""}`}
+                                    disabled={navPatchLoading || navFetchLoading || !isAutonomousReady}
+                                    className={`relative w-14 h-7 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors duration-300 ${!isAutonomousReady ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${navPatchLoading || navFetchLoading ? "cursor-wait" : ""}`}
                                     style={{ backgroundColor: isAutonomous ? "#2563eb" : "#cbd5e1" }}
                                     aria-label="Toggle navigation mode"
                                 >
-                                    {navPatchLoading && (
+                                    {(navPatchLoading || navFetchLoading) && (
                                         <span className="absolute inset-0 flex items-center justify-center z-10">
                                             <Loader2 className="w-4 h-4 animate-spin text-white" />
                                         </span>
                                     )}
-                                    <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out ${isAutonomous ? "translate-x-7" : "translate-x-0"}`} />
+                                    <span
+                                        className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out ${isAutonomous ? "translate-x-7" : "translate-x-0"}`}
+                                    />
                                 </button>
                                 <span className={`text-xs font-semibold transition-colors duration-300 ${isAutonomous ? "text-blue-700" : "text-slate-400"}`}>
                                     Autonomous
                                 </span>
                             </div>
 
+                            {/* Map not ready warning */}
                             {!isAutonomousReady && (
                                 <div className="flex items-center justify-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -988,6 +1106,7 @@ const Dashboard: React.FC = () => {
                                 </div>
                             )}
 
+                            {/* PATCH error */}
                             {navPatchError && (
                                 <div className="flex items-center gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -998,7 +1117,10 @@ const Dashboard: React.FC = () => {
                                 </div>
                             )}
 
+                            {/* Autonomous expanded panel */}
                             <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isAutonomous ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}>
+
+                                {/* Navigation style selector */}
                                 <div className="flex gap-2 mb-4">
                                     {(
                                         [
@@ -1013,7 +1135,7 @@ const Dashboard: React.FC = () => {
                                                 key={value}
                                                 type="button"
                                                 onClick={() => handleStyleChange(value)}
-                                                disabled={navPatchLoading || disabled}
+                                                disabled={navPatchLoading || navFetchLoading || disabled}
                                                 title={disabled ? "Waiting for mode activation" : ""}
                                                 className={`flex-1 text-xs font-semibold px-2 py-2 rounded-lg border transition-all duration-200 ${
                                                     navigationStyle === value
@@ -1029,6 +1151,7 @@ const Dashboard: React.FC = () => {
                                     })}
                                 </div>
 
+                                {/* Locations list */}
                                 <div className="flex items-center justify-between mb-2">
                                     <h3 className="font-medium text-slate-800 text-sm">Recent Locations</h3>
                                     {locations.length > 0 && <span className="text-xs text-slate-500">Map: {mapName}</span>}
@@ -1061,6 +1184,7 @@ const Dashboard: React.FC = () => {
                                 </div>
                             </div>
 
+                            {/* Stationary placeholder */}
                             {!isAutonomous && (
                                 <div className="flex flex-col items-center justify-center py-10 text-slate-400">
                                     <Navigation className="w-10 h-10 mx-auto mb-2 opacity-25" />
@@ -1071,11 +1195,8 @@ const Dashboard: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* ── Camera Status Card ── */}
+                    {/* Camera & Arm Status */}
                     <div className="relative bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-                        {/* Overlay covers the whole card when camera data is stale */}
-                        {/* <StaleOverlay show={cameraChannel.isStale || !cameraChannel.hasEverReceived} /> */}
-
                         <h2 className="text-xl font-semibold flex items-center gap-3 mb-4">
                             <Camera className="text-violet-500/80" size={20} />
                             <span className="text-slate-800">Camera Status</span>
@@ -1117,17 +1238,12 @@ const Dashboard: React.FC = () => {
                             })}
                         </div>
 
-                        {/* ── CAN / Arm Status ── */}
+                        {/* Arm / CAN status */}
                         <div className="relative mt-4 pt-4 border-t border-slate-100">
-                            {/* Separate overlay for CAN section only */}
-                            {/* <StaleOverlay show={canChannel.isStale || !canChannel.hasEverReceived} /> */}
-
                             <h3 className="font-medium text-slate-800 flex items-center gap-2 mb-1">
                                 <Handshake className="text-indigo-500" size={20} />
                                 Arm Status
                             </h3>
-
-                            {/* Arm temperature row */}
 
                             <div className="grid grid-cols-2 gap-2">
                                 {(["can0", "can1"] as const).map((can) => (
