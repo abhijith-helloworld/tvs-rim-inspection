@@ -1,95 +1,100 @@
+// FILE: middleware.ts (root of Next.js project)
+
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  const { pathname, searchParams } = request.nextUrl;
+  const { pathname } = request.nextUrl;
 
-  // ✅ Read token + role from URL (coming from Flutter)
-  const urlToken = searchParams.get("token");
-  const urlRole = searchParams.get("role");
+  const token = request.cookies.get("access_token")?.value;
+  const role = request.cookies.get("role")?.value;
 
-  // ✅ Read token + role from cookies (after first login)
-  const cookieToken = request.cookies.get("access_token")?.value;
-  const cookieRole = request.cookies.get("role")?.value;
+  // -------------------------------
+  // ✅ AUTH ROUTES: Redirect away if already logged in
+  // -------------------------------
+  const authRoutes = ["/login", "/register", "/mobile-auth"];
 
-  // -------------------------------------------------
-  // ✅ FIRST TIME LOGIN FROM FLUTTER
-  // Example: /admin?token=XXX&role=ADMIN
-  // -------------------------------------------------
-  if (urlToken && urlRole) {
-    const cleanUrl = new URL(
-      urlRole === "ADMIN" ? "/admin" : "/userDashboard",
-      request.url
-    );
-
-    const response = NextResponse.redirect(cleanUrl);
-
-    // IMPORTANT for LAN (http://192.168.x.x)
-    response.cookies.set({
-      name: "access_token",
-      value: urlToken,
-      httpOnly: false,
-      secure: false,      // must be false for HTTP
-      sameSite: "lax",
-      path: "/",
-    });
-
-    response.cookies.set({
-      name: "role",
-      value: urlRole,
-      httpOnly: false,
-      secure: false,
-      sameSite: "lax",
-      path: "/",
-    });
-
-    return response;
-  }
-
-  // -------------------------------------------------
-  // ✅ PUBLIC ROUTES (no login needed)
-  // -------------------------------------------------
-  const publicRoutes = ["/login", "/register"];
-
-  if (publicRoutes.some(route => pathname.startsWith(route))) {
+  if (authRoutes.includes(pathname)) {
+    if (token && role) {
+      // Already logged in — send to appropriate dashboard
+      if (role === "ADMIN") {
+        return NextResponse.redirect(new URL("/admin", request.url));
+      }
+      return NextResponse.redirect(new URL("/userDashboard", request.url));
+    }
+    // Not logged in — allow access to auth pages
     return NextResponse.next();
   }
 
-  // -------------------------------------------------
-  // ❌ Not Logged In
-  // -------------------------------------------------
-  if (!cookieToken) {
+  // -------------------------------
+  // ✅ NOT LOGGED IN → REDIRECT TO LOGIN
+  // -------------------------------
+  if (!token || !role) {
+    console.log(`❌ No token/role found, redirecting to login from: ${pathname}`);
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // -------------------------------------------------
-  // ✅ ADMIN ACCESS
-  // -------------------------------------------------
-  if (cookieRole === "ADMIN") {
+  // -------------------------------
+  // ✅ ADMIN ACCESS (FULL ACCESS)
+  // -------------------------------
+  if (role === "ADMIN") {
+    console.log(`✅ Admin access granted for: ${pathname}`);
     return NextResponse.next();
   }
 
-  // -------------------------------------------------
-  // ✅ USER ACCESS (block admin)
-  // -------------------------------------------------
-  if (cookieRole === "USER") {
+  // -------------------------------
+  // ✅ USER ACCESS (LIMITED)
+  // -------------------------------
+  if (role === "USER") {
+    // ❌ Block admin area entirely
     if (pathname.startsWith("/admin")) {
+      console.log(`❌ User blocked from admin area`);
       return NextResponse.redirect(new URL("/userDashboard", request.url));
     }
+
+    const allowedUserRoutes = [
+      "/userDashboard",
+      "/users",
+      "/arm",
+      "/rimType",
+      "/inspections",
+      "/schedule",
+      "/settings",
+    ];
+
+    const isAllowed = allowedUserRoutes.some(
+      (route) => pathname === route || pathname.startsWith(route + "/")
+    );
+
+    if (!isAllowed) {
+      console.log(`❌ User blocked from: ${pathname}`);
+      return NextResponse.redirect(new URL("/userDashboard", request.url));
+    }
+
+    console.log(`✅ User access granted for: ${pathname}`);
     return NextResponse.next();
   }
 
-  // -------------------------------------------------
-  // ❌ Unknown role
-  // -------------------------------------------------
+  // -------------------------------
+  // ❌ UNKNOWN ROLE → FORCE LOGIN
+  // -------------------------------
+  console.log(`❌ Unknown role: ${role}, forcing login`);
   return NextResponse.redirect(new URL("/login", request.url));
 }
 
-// -------------------------------------------------
-// ✅ Ignore static + API
-// -------------------------------------------------
+// -------------------------------------
+// ✅ MATCHER (IGNORE STATIC + API)
+// -------------------------------------
 export const config = {
   matcher: [
+    /*
+     * Match all request paths except:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public files (images, etc.)
+     */
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

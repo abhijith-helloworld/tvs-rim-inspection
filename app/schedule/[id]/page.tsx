@@ -6,6 +6,7 @@ import { fetchWithAuth, API_BASE_URL } from "../../lib/auth";
 import {
     Calendar, ChevronRight, Loader2, XCircle,
     ChevronLeft, Search, BarChart3, AlertCircle,
+    ChevronDown, Check, X,
 } from "lucide-react";
 import { ScheduleCard } from "./_components/schedule-card";
 import { RobotWebSocketManager } from "../../lib/websocket-utils";
@@ -18,7 +19,7 @@ interface Schedule {
     scheduled_time: string;
     end_time: string;
     is_canceled: boolean;
-    status: "scheduled" | "processing" | "completed" | "pending";
+    status: "scheduled" | "processing" | "completed";
     created_at: string;
     robot: number;
 }
@@ -58,16 +59,158 @@ interface ScheduleListPageProps {
 }
 
 /* ===================== HELPERS ===================== */
-function buildFilterBody(filterData?: FilterData): Record<string, string | undefined> {
-    if (!filterData) {
-        return { filter_type: "month", date: new Date().toISOString().split("T")[0] };
-    }
+function buildFilterBody(
+    filterData?: FilterData,
+    statusFilter?: string[]
+): Record<string, string | string[] | undefined> {
+    const base = filterData
+        ? {
+              filter_type: filterData.filter_type,
+              date:        filterData.date       || undefined,
+              start_date:  filterData.start_date || undefined,
+              end_date:    filterData.end_date   || undefined,
+          }
+        : { filter_type: "month", date: new Date().toISOString().split("T")[0] };
+
     return {
-        filter_type: filterData.filter_type,
-        date:       filterData.date       || undefined,
-        start_date: filterData.start_date || undefined,
-        end_date:   filterData.end_date   || undefined,
+        ...base,
+        ...(statusFilter && statusFilter.length > 0 ? { status: statusFilter } : {}),
     };
+}
+
+/* ===================== STATUS CONFIG ===================== */
+const STATUS_OPTIONS = [
+    { value: "scheduled",  label: "Scheduled" },
+    { value: "processing", label: "Processing" },
+    { value: "completed",  label: "Completed",}
+];
+
+/* ===================== STATUS DROPDOWN COMPONENT ===================== */
+interface StatusDropdownProps {
+    value: string[];
+    onChange: (val: string[]) => void;
+}
+
+function StatusDropdown({ value, onChange }: StatusDropdownProps) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    // Close on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    const toggle = (val: string) => {
+        onChange(value.includes(val) ? value.filter((v) => v !== val) : [...value, val]);
+    };
+
+    const clearAll = () => onChange([]);
+
+    return (
+        <div ref={ref} className="relative min-w-[200px]">
+            {/* Trigger Button */}
+            <button
+                onClick={() => setOpen((p) => !p)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border border-gray-200/50 bg-white/50 hover:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all text-sm"
+            >
+                {/* Selected tags or placeholder */}
+                <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
+                    {value.length === 0 ? (
+                        <span className="text-gray-400">All Status</span>
+                    ) : (
+                        value.map((v) => {
+                            const opt = STATUS_OPTIONS.find((o) => o.value === v);
+                            return (
+                                <span
+                                    key={v}
+                                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-xs font-medium text-gray-700"
+                                >
+                                    {/* <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${opt?.dot}`} /> */}
+                                    {opt?.label}
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => { e.stopPropagation(); toggle(v); }}
+                                        onKeyDown={(e) => e.key === "Enter" && (e.stopPropagation(), toggle(v))}
+                                        className="ml-0.5 text-gray-400 hover:text-gray-700 cursor-pointer"
+                                    >
+                                        <X className="w-2.5 h-2.5" />
+                                    </span>
+                                </span>
+                            );
+                        })
+                    )}
+                </div>
+                <ChevronDown
+                    className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+                />
+            </button>
+
+            {/* Dropdown Panel */}
+            {open && (
+                <div className="absolute z-50 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+                    {/* Panel Header */}
+                    <div className="flex items-center p-2 justify-between border-gray-100 bg-gray-50">
+                        {value.length > 0 && (
+                            <button
+                                onClick={clearAll}
+                                className="text-xs text-rose-500 hover:text-rose-700 font-semibold transition-colors"
+                            >
+                                Clear all
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Option List */}
+                    <ul className="py-1">
+                        {STATUS_OPTIONS.map((opt) => {
+                            const isSelected = value.includes(opt.value);
+                            return (
+                                <li key={opt.value}>
+                                    <button
+                                        onClick={() => toggle(opt.value)}
+                                        className={`w-full flex items-center justify-between gap-3 px-3 py-2.5 text-sm transition-colors ${
+                                            isSelected
+                                                ? "bg-teal-50 text-gray-900"
+                                                : "hover:bg-gray-50 text-gray-600"
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2.5">
+                                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${opt.dot}`} />
+                                            <span className="font-medium">{opt.label}</span>
+                                        </div>
+                                        <div
+                                            className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
+                                                isSelected
+                                                    ? "bg-teal-600 border-teal-600"
+                                                    : "border-gray-300 bg-white"
+                                            }`}
+                                        >
+                                            {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                                        </div>
+                                    </button>
+                                </li>
+                            );
+                        })}
+                    </ul>
+
+                    {/* Panel Footer */}
+                    <div className="px-3 py-2 border-t border-gray-100 bg-gray-50">
+                        <button
+                            onClick={() => setOpen(false)}
+                            className="w-full py-1.5 rounded-lg bg-teal-600 text-white text-xs font-semibold hover:bg-teal-700 transition-colors"
+                        >
+                            Apply
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
 }
 
 /* ===================== MAIN COMPONENT ===================== */
@@ -81,7 +224,7 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
     const [loading,       setLoading]       = useState(true);
     const [error,         setError]         = useState<string | null>(null);
     const [searchQuery,   setSearchQuery]   = useState("");
-    const [statusFilter,  setStatusFilter]  = useState<string>("all");
+    const [statusFilter,  setStatusFilter]  = useState<string[]>([]);
     const [currentPage,   setCurrentPage]   = useState(1);
     const [pageSize]                        = useState(8);
     const [isRefreshing,  setIsRefreshing]  = useState(false);
@@ -135,7 +278,7 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
         setIsRefreshing(true);
         setError(null);
         try {
-            const filterBody = buildFilterBody(filterData);
+            const filterBody = buildFilterBody(filterData, statusFilter);
             const url = `${API_BASE_URL}/schedule/robot/${robotDbId}/filter/?page=${currentPage}&page_size=${pageSize}`;
             const response = await fetchWithAuth(url, {
                 method: "POST",
@@ -165,9 +308,9 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
             setLoading(false);
             setIsRefreshing(false);
         }
-    }, [robotDbId, currentPage, pageSize, filterData]);
+    }, [robotDbId, currentPage, pageSize, filterData, statusFilter]);
 
-    /* ── Initial fetch ── */
+    /* ── Initial + re-fetch on filter/page change ── */
     useEffect(() => {
         if (!robotDbId || isNaN(Number(robotDbId))) return;
         setLoading(true);
@@ -203,18 +346,18 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
         }
     };
 
-    // robotDbId is the numeric DB id — passed to inspections page as robot_id
     const handleScheduleClick = (scheduleId: number) => {
         router.push(`/inspections?schedule_id=${scheduleId}&robot_id=${robotDbId}`);
     };
 
+    const handleStatusChange = (val: string[]) => {
+        setStatusFilter(val);
+        setCurrentPage(1);
+    };
+
     const filteredSchedules = schedules.filter((schedule) => {
         if (searchQuery && !schedule.location.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-        if (statusFilter !== "all") {
-            if (statusFilter === "canceled" && !schedule.is_canceled) return false;
-            if (statusFilter !== "canceled" && schedule.is_canceled) return false;
-            if (statusFilter !== "canceled" && schedule.status !== statusFilter) return false;
-        }
+        if (statusFilter.length > 0 && !statusFilter.includes(schedule.status)) return false;
         return true;
     });
 
@@ -309,33 +452,23 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
                 </div>
             )}
 
-            {/* Search & filter */}
-            <div className="mb-4">
+            {/* Search & Status Filter */}
+            <div className="mb-4 flex">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center space-x-4 flex-1">
-                        <div className="relative flex-1 max-w-md">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                            <input
-                                type="text"
-                                placeholder="Search by location..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200/50 bg-white/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all"
-                            />
-                        </div>
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="px-4 py-2.5 rounded-xl border border-gray-200/50 bg-white/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all"
-                        >
-                            <option value="all">All Status</option>
-                            <option value="scheduled">Scheduled</option>
-                            <option value="pending">Pending</option>
-                            <option value="processing">Processing</option>
-                            <option value="completed">Completed</option>
-                            <option value="canceled">Canceled</option>
-                        </select>
+                    {/* Search */}
+                    <div className="relative flex-1 max-w-md">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="Search by location..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200/50 bg-white/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all"
+                        />
                     </div>
+
+                    {/* Status Multi-Select Dropdown */}
+                    <StatusDropdown value={statusFilter} onChange={handleStatusChange} />
                 </div>
             </div>
 
@@ -345,7 +478,9 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
                     <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-400" />
                     <h3 className="text-2xl font-semibold mb-3 text-gray-900">No Schedules Found</h3>
                     <p className="text-gray-600">
-                        {searchQuery || statusFilter !== "all" ? "No schedules match your criteria." : "No schedules available for this robot."}
+                        {searchQuery || statusFilter.length > 0
+                            ? "No schedules match your criteria."
+                            : "No schedules available for this robot."}
                     </p>
                 </div>
             ) : (
