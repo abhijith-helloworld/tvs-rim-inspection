@@ -1,57 +1,133 @@
-// FILE: middleware.ts (root of Next.js project)
-
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+
+function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(
+      Buffer.from(token.split(".")[1], "base64").toString()
+    );
+    const now = Math.floor(Date.now() / 1000);
+    console.log("🕐 Token exp:", new Date(payload.exp * 1000).toISOString());
+    console.log("🕐 Now:      ", new Date(now * 1000).toISOString());
+    console.log("🕐 Expired?  ", payload.exp < now);
+    return payload.exp < now;
+  } catch {
+    console.log("❌ Failed to parse token");
+    return true;
+  }
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("📍 Path:", pathname);
+
+  // --------------------------------------------------
+  // ✅ Token + role in URL → set cookies → redirect /admin
+  // --------------------------------------------------
+  const urlToken = request.nextUrl.searchParams.get("token");
+  const urlRole = request.nextUrl.searchParams
+    .get("role")
+    ?.replace(/'/g, "")
+    .trim()
+    .toUpperCase();
+
+  if (urlToken && urlRole === "ADMIN") {
+    console.log("🔑 Token found in URL");
+    console.log("👤 Role from URL:", urlRole);
+
+    if (!isTokenExpired(urlToken)) {
+      console.log("✅ Token valid → setting cookies → /admin");
+
+      const response = NextResponse.redirect(new URL("/admin", request.url));
+
+      response.cookies.set("access_token", urlToken, {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24,
+      });
+
+      response.cookies.set("role", urlRole, {
+        httpOnly: true,
+        secure: false,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24,
+      });
+
+      return response;
+    } else {
+      console.log("❌ Token in URL expired → /login");
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+  }
+
+  // --------------------------------------------------
+  // ✅ Skip login + register
+  // --------------------------------------------------
+  if (pathname.startsWith("/login") || pathname.startsWith("/register")) {
+    console.log("⏭️ Skipping auth for:", pathname);
+    return NextResponse.next();
+  }
+
+  // --------------------------------------------------
+  // ✅ Read cookies
+  // --------------------------------------------------
   const token = request.cookies.get("access_token")?.value;
   const role = request.cookies.get("role")?.value;
 
-  // -------------------------------
-  // ✅ AUTH ROUTES: Redirect away if already logged in
-  // -------------------------------
-  const authRoutes = ["/login", "/register", "/mobile-auth"];
+  console.log("🍪 Cookie token exists:", !!token);
+  console.log("🍪 Cookie role:", role ?? "NONE");
 
-  if (authRoutes.includes(pathname)) {
-    if (token && role) {
-      // Already logged in — send to appropriate dashboard
-      if (role === "ADMIN") {
-        return NextResponse.redirect(new URL("/admin", request.url));
-      }
-      return NextResponse.redirect(new URL("/userDashboard", request.url));
-    }
-    // Not logged in — allow access to auth pages
-    return NextResponse.next();
+  if (token) {
+    console.log("🔍 Token preview:", token.substring(0, 20) + "...");
   }
 
-  // -------------------------------
-  // ✅ NOT LOGGED IN → REDIRECT TO LOGIN
-  // -------------------------------
-  if (!token || !role) {
-    console.log(`❌ No token/role found, redirecting to login from: ${pathname}`);
+  // --------------------------------------------------
+  // ❌ No token → login
+  // --------------------------------------------------
+  if (!token) {
+    console.log("❌ No token → /login");
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // -------------------------------
-  // ✅ ADMIN ACCESS (FULL ACCESS)
-  // -------------------------------
+  // --------------------------------------------------
+  // ❌ Expired token → clear + login
+  // --------------------------------------------------
+  if (isTokenExpired(token)) {
+    console.log("❌ Token expired → clearing → /login");
+    const response = NextResponse.redirect(new URL("/login", request.url));
+    response.cookies.delete("access_token");
+    response.cookies.delete("role");
+    return response;
+  }
+
+  // --------------------------------------------------
+  // ✅ Prevent going back to login
+  // --------------------------------------------------
+  if (pathname === "/login") {
+    console.log("↩️ Already logged in → away from /login");
+    if (role === "ADMIN") {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
+    return NextResponse.redirect(new URL("/userDashboard", request.url));
+  }
+
+  // --------------------------------------------------
+  // ✅ ADMIN → Full access
+  // --------------------------------------------------
   if (role === "ADMIN") {
-    console.log(`✅ Admin access granted for: ${pathname}`);
+    console.log("✅ ADMIN → access granted:", pathname);
     return NextResponse.next();
   }
 
-  // -------------------------------
-  // ✅ USER ACCESS (LIMITED)
-  // -------------------------------
+  // --------------------------------------------------
+  // ✅ USER → Restricted
+  // --------------------------------------------------
   if (role === "USER") {
-    // ❌ Block admin area entirely
-    if (pathname.startsWith("/admin")) {
-      console.log(`❌ User blocked from admin area`);
-      return NextResponse.redirect(new URL("/userDashboard", request.url));
-    }
-
     const allowedUserRoutes = [
       "/userDashboard",
       "/users",
@@ -66,35 +142,24 @@ export function middleware(request: NextRequest) {
       (route) => pathname === route || pathname.startsWith(route + "/")
     );
 
-    if (!isAllowed) {
-      console.log(`❌ User blocked from: ${pathname}`);
+    if (pathname.startsWith("/admin") || !isAllowed) {
+      console.log("🚫 USER blocked from:", pathname);
       return NextResponse.redirect(new URL("/userDashboard", request.url));
     }
 
-    console.log(`✅ User access granted for: ${pathname}`);
+    console.log("✅ USER access granted:", pathname);
     return NextResponse.next();
   }
 
-  // -------------------------------
-  // ❌ UNKNOWN ROLE → FORCE LOGIN
-  // -------------------------------
-  console.log(`❌ Unknown role: ${role}, forcing login`);
+  // --------------------------------------------------
+  // ❌ Unknown role
+  // --------------------------------------------------
+  console.log("❌ Unknown role:", role, "→ /login");
   return NextResponse.redirect(new URL("/login", request.url));
 }
 
-// -------------------------------------
-// ✅ MATCHER (IGNORE STATIC + API)
-// -------------------------------------
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public files (images, etc.)
-     */
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
