@@ -90,7 +90,8 @@ function DeleteConfirmModal({
                     }
                 `}</style>
 
-                {/* PopUp Modal */}
+                {/* Red accent top bar */}
+                <div className="h-1.5 bg-gradient-to-r from-red-500 to-rose-400" />
 
                 <div className="p-6">
                     {/* Icon */}
@@ -185,8 +186,9 @@ export default function ArmCalibration({
         right: Set<Point>;
     }>({ left: new Set(), right: new Set() });
 
-    // FIX 3: pointsUnlocked gates per-hand checkbox interactivity.
-    // Stays false until the first WS point-data event arrives for that hand.
+    // pointsUnlocked gates per-hand checkbox interactivity.
+    // Unlocked either when ready_for_data_collection fires (with hand info)
+    // or when the first WS point-data event arrives for that hand.
     const [pointsUnlocked, setPointsUnlocked] = useState<{ left: boolean; right: boolean }>({
         left: false,
         right: false,
@@ -206,7 +208,6 @@ export default function ArmCalibration({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<number | null>(null);
-    // FIX 1: confirmDeleteId drives the custom delete modal (null = closed)
     const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
     // WebSocket State
@@ -235,7 +236,7 @@ export default function ArmCalibration({
 
     // WebSocket connection effect
     useEffect(() => {
-        const wsUrl = `ws://192.168.0.216:8002/ws/robot_message/${roboId}/profile/`;
+        const wsUrl = `ws://192.168.0.152:8002/ws/robot_message/${roboId}/profile/`;
         const websocket = new WebSocket(wsUrl);
 
         websocket.onopen = () => {
@@ -282,7 +283,7 @@ export default function ArmCalibration({
                     const values = (data as any).data?.data?.values;
                     if (values && Array.isArray(values)) {
                         setPointData((prev) => ({ ...prev, [hand]: { ...prev[hand], [point]: values } }));
-                        // FIX 3: unlock checkboxes for this hand once WS data arrives
+                        // Also unlock checkboxes for this hand when point data arrives
                         setPointsUnlocked((prev) => ({ ...prev, [hand]: true }));
                         setWsMessage(`${hand} ${point.replace(/_/g, " ")} data received`);
                         setTimeout(() => setWsMessage(null), 3000);
@@ -302,11 +303,39 @@ export default function ArmCalibration({
                     }
                 }
 
+                // ── ready_for_data_collection ──────────────────────────────────
+                // Unlock checkboxes as soon as the robot signals readiness.
+                // Priority: use the hand field from the payload if present;
+                // otherwise fall back to whichever hand(s) are currently toggled on.
                 if ((data as any).event === "ready_for_data_collection") {
                     setHandsReady(true);
-                    setWsMessage("Ready for data collection - You can now select a hand");
+
+                    const activeHand: Hand | undefined = (data as any).data?.hand;
+
+                    if (activeHand === "left" || activeHand === "right") {
+                        // Server explicitly tells us which hand is ready
+                        setPointsUnlocked((prev) => ({ ...prev, [activeHand]: true }));
+                        setWsMessage(
+                            `Ready for data collection on ${activeHand} hand — you can now select points`
+                        );
+                    } else {
+                        // No hand specified — unlock whichever hand(s) are currently on.
+                        // Use the functional-setter form to read current hands state
+                        // without creating a stale closure dependency.
+                        setHands((currentHands) => {
+                            setPointsUnlocked((prev) => ({
+                                left:  currentHands.left  ? true : prev.left,
+                                right: currentHands.right ? true : prev.right,
+                            }));
+                            return currentHands; // no change to hands, just reading it
+                        });
+                        setWsMessage("Ready for data collection — you can now select points");
+                    }
+
                     setTimeout(() => setWsMessage(null), 3000);
                 }
+                // ──────────────────────────────────────────────────────────────
+
             } catch (err) {}
         };
 
@@ -443,7 +472,6 @@ export default function ArmCalibration({
         }
     };
 
-    // FIX 2: Unwrap { success, data } envelope returned by the server on create
     const createProfile = async () => {
         if (!newProfileName.trim()) { setError("Profile name cannot be empty"); return; }
         clearError();
@@ -457,8 +485,6 @@ export default function ArmCalibration({
 
             const response = await res.json();
 
-            // Server wraps the created object in { success: true, data: {...} }
-            // Fall back to flat object if the envelope is absent
             let profile: Profile;
             if (response?.success && response?.data) {
                 profile = response.data;
@@ -479,7 +505,6 @@ export default function ArmCalibration({
         }
     };
 
-    // FIX 1: deleteProfile — called by the custom modal's Confirm button
     const deleteProfile = async (profileId: number) => {
         clearError();
         setDeletingId(profileId);
@@ -684,7 +709,6 @@ export default function ArmCalibration({
         }
     };
 
-    // FIX 3: gate point clicks on pointsUnlocked[hand]
     const onPointClick = async (hand: Hand, point: Point) => {
         if (!hands[hand]) { setError(`${hand} hand must be enabled first`); return; }
         if (!pointsUnlocked[hand]) {
@@ -739,7 +763,7 @@ export default function ArmCalibration({
             {/* Modal Container */}
             <div className="relative bg-white rounded-xl shadow-xl border border-gray-200 w-[80%] max-h-[90vh] overflow-hidden">
 
-                {/* ── FIX 1: Custom Delete Confirmation Modal ──────────────── */}
+                {/* Custom Delete Confirmation Modal */}
                 {profileToDelete && (
                     <DeleteConfirmModal
                         profile={profileToDelete}
@@ -748,7 +772,6 @@ export default function ArmCalibration({
                         onCancel={() => setConfirmDeleteId(null)}
                     />
                 )}
-                {/* ─────────────────────────────────────────────────────────── */}
 
                 {/* Header */}
                 <div className="bg-white border-b border-gray-200 px-8 py-6">
@@ -857,7 +880,6 @@ export default function ArmCalibration({
                                                                     Active
                                                                 </span>
                                                             )}
-                                                            {/* FIX 1: Trash button → opens custom delete modal */}
                                                             <button
                                                                 type="button"
                                                                 disabled={deletingId === profile.id}
@@ -979,8 +1001,6 @@ export default function ArmCalibration({
                                                             {POINTS.map((point) => {
                                                                 const isSelected = selectedPoints[hand].has(point);
                                                                 const hasData = pointData[hand][point] !== null;
-
-                                                                // FIX 3: checkbox is only interactive after WS unlocks it
                                                                 const isPointInteractive =
                                                                     hands[hand] && pointsUnlocked[hand] && !loading;
 
@@ -992,7 +1012,7 @@ export default function ArmCalibration({
                                                                             onClick={() => onPointClick(hand, point)}
                                                                             title={
                                                                                 hands[hand] && !pointsUnlocked[hand]
-                                                                                    ? "Waiting for robot data before points can be selected"
+                                                                                    ? "Waiting for robot to be ready before points can be selected"
                                                                                     : undefined
                                                                             }
                                                                             className={`w-full px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-all border flex items-center justify-between ${
@@ -1013,7 +1033,7 @@ export default function ArmCalibration({
                                                                                 />
                                                                                 {point.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
                                                                             </span>
-                                                                            {/* Status badge — waiting vs data received */}
+                                                                            {/* Status badge */}
                                                                             {hands[hand] && !pointsUnlocked[hand] ? (
                                                                                 <span className="text-xs text-amber-500 font-medium whitespace-nowrap">⏳ Waiting</span>
                                                                             ) : hasData ? (
@@ -1021,7 +1041,7 @@ export default function ArmCalibration({
                                                                             ) : null}
                                                                         </button>
 
-                                                                        {/* Point data values — always visible when present, regardless of lock */}
+                                                                        {/* Point data values */}
                                                                         {hasData && pointData[hand][point] && (
                                                                             <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs">
                                                                                 <span className="text-blue-700 font-medium">Values: </span>

@@ -762,7 +762,7 @@ const Dashboard: React.FC = () => {
         const connect = () => {
             try {
                 ws = new WebSocket(
-                    `ws://192.168.0.216:8002/ws/robot_message/${roboId}/`,
+                    `ws://192.168.0.152:8002/ws/robot_message/${roboId}/`,
                 );
                 wsRef.current = ws;
                 ws.onopen = () => setWsConnected(true);

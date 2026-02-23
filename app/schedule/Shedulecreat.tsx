@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 
-function ScheduleCreatePage() {
+function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -52,7 +52,7 @@ function ScheduleCreatePage() {
     /* ===================== INITIALIZE ROBOT ID ===================== */
     useEffect(() => {
         // Priority: URL param > Route param > Default
-        const id = robotIdFromUrl || robotIdFromParams || "1";
+        const id = robotIdProp || robotIdFromUrl || robotIdFromParams;
         if (!id || id === "undefined" || id === "null") {
             console.error("CreateSchedule - Invalid robotId, redirecting...");
             router.push("/dashboard?robot_id=1");

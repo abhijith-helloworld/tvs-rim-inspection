@@ -165,7 +165,7 @@ export default function InspectionDetailPage() {
 
         const connect = () => {
             try {
-                ws = new WebSocket(`ws://192.168.0.216:8002/ws/robot_message/${roboId}/`);
+                ws = new WebSocket(`ws://192.168.0.152:8002/ws/robot_message/${roboId}/`);
                 wsRef.current = ws;
 
                 ws.onopen = () => {
@@ -399,7 +399,7 @@ export default function InspectionDetailPage() {
                                     alt="Inspection image"
                                     className="w-full h-full object-contain p-4"
                                 />
-                                <div
+                                {/* <div
                                     className={`absolute top-6 right-6 px-4 py-2.5 rounded-full font-bold shadow-lg text-white ${
                                         inspection.is_defect
                                             ? "bg-gradient-to-r from-red-600 to-red-500"
@@ -407,7 +407,7 @@ export default function InspectionDetailPage() {
                                     }`}
                                 >
                                     {inspection.is_defect ? "⚠ DEFECT" : "✓ NO DEFECT"}
-                                </div>
+                                </div> */}
                             </div>
 
                             <div className="p-6 border-t border-gray-100 bg-gradient-to-r from-gray-50 to-white">

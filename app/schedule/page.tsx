@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-// import SchedulesList from "./[id]/page";
+import SchedulesList from "./[id]/page";
 import CreateSchedule from "./Shedulecreat";
-import SchedulesList from "./[id]/page"; // ✅
+// import SchedulesList from "./[id]/_components/schedule-list";
 import { tokenStorage, API_BASE_URL, fetchWithAuth } from "../lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -227,7 +227,7 @@ function DashboardContent() {
         const connect = () => {
             try {
                 ws = new WebSocket(
-                    `ws://192.168.0.216:8002/ws/robot_message/${roboId}/`,
+                    `ws://192.168.0.152:8002/ws/robot_message/${roboId}/`,
                 );
                 wsRef.current = ws;
 
@@ -344,7 +344,7 @@ function DashboardContent() {
                                 {loading ? "..." : statusTotals.total}
                             </p>
                             <p className="text-sm text-gray-600 font-medium">
-                                Total Inspections
+                                Total Schedule
                             </p>
                         </div>
                     </div>

@@ -251,7 +251,7 @@ export default function InspectionsBySchedule() {
 
         const connect = () => {
             try {
-                ws = new WebSocket(`ws://192.168.0.216:8002/ws/robot_message/${roboId}/`);
+                ws = new WebSocket(`ws://192.168.0.152:8002/ws/robot_message/${roboId}/`);
                 wsRef.current = ws;
 
                 ws.onopen = () => setWsConnected(true);
@@ -485,7 +485,7 @@ export default function InspectionsBySchedule() {
                                                             alt="Rim inspection"
                                                             className="w-20 h-20 rounded-xl object-cover border border-gray-200 group-hover:border-gray-300 transition-colors"
                                                         />
-                                                        <div
+                                                        {/* <div
                                                             className={`absolute -top-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center ${
                                                                 isDefect ? "bg-red-500" : "bg-emerald-500"
                                                             }`}
@@ -495,7 +495,7 @@ export default function InspectionsBySchedule() {
                                                             ) : (
                                                                 <CheckCircle className="w-4 h-4 text-white" />
                                                             )}
-                                                        </div>
+                                                        </div> */}
                                                     </div>
 
                                                     {/* Content */}

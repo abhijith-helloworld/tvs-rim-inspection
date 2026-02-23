@@ -322,7 +322,7 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
         if (!roboId) return;
         wsManagerRef.current = new RobotWebSocketManager({
             robotId: roboId,
-            baseUrl: "ws://192.168.0.216:8002",
+            baseUrl: "ws://192.168.0.152:8002",
             onScheduleUpdated: () => {
                 if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
                 refreshTimeoutRef.current = setTimeout(() => fetchFilteredData(), 1000);
