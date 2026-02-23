@@ -336,9 +336,6 @@ const Dashboard: React.FC = () => {
 
     /**
      * Apply any navigation API / WebSocket payload to all related state in one shot.
-     *
-     * Used by:
-     *   - GET /robots/{id}/navigation/  (on mount + after PATCH)
      */
     const applyNavData = useCallback((data: {
         navigation_mode:  "stationary" | "autonomous";
@@ -481,16 +478,6 @@ const Dashboard: React.FC = () => {
 
     useEffect(() => { if (robotId) fetchLocations(robotId); }, [robotId, fetchLocations]);
 
-    // ── GET current navigation state ──────────────────────────────────────────
-    /**
-     * Fetches authoritative navigation state from GET /robots/{id}/navigation/.
-     * Called on:
-     *   - Mount / robotId change
-     *   - After every successful PATCH
-     *   - On WS events: navigation_updated, autonomous_ready, navigation_update
-     *
-     * This is the single source of truth — all navigation state flows through here.
-     */
     const refetchNavigation = useCallback(async () => {
         if (!robotId) return;
         try {
@@ -539,18 +526,6 @@ const Dashboard: React.FC = () => {
     }, [navigationStyle]);
 
     // ── PATCH navigation ──────────────────────────────────────────────────────
-    /**
-     * Calls PATCH /robots/{id}/navigation/ with the desired mode and style.
-     *
-     * IMPORTANT: navigation_style is ALWAYS required by the backend when
-     * mode is "autonomous". We therefore always pass an explicit style —
-     * never rely on a default or omit it — to avoid the 500 error:
-     *   "Navigation style is required when mode is autonomous."
-     *
-     * After every successful PATCH we call refetchNavigation() (GET) so that
-     * autonomous_ready, mode_active, navigation_mode and navigation_style are
-     * always in sync with the server — not with what the PATCH response returned.
-     */
     const patchNavigation = useCallback(async (
         mode: "stationary" | "autonomous",
         style?: "free" | "strict" | "strict_with_autonomous",
@@ -559,12 +534,9 @@ const Dashboard: React.FC = () => {
         setNavPatchLoading(true);
         setNavPatchError(null);
 
-        // Snapshot previous values so we can roll back precisely on failure
         const prevMode  = navigationMode;
         const prevStyle = navigationStyle;
 
-        // Build payload.
-        // When autonomous: navigation_style is REQUIRED by the backend.
         const payload: NavigationPayload = { navigation_mode: mode };
         if (mode === "autonomous") {
             payload.navigation_style = style ?? navigationStyle ?? "free";
@@ -581,13 +553,10 @@ const Dashboard: React.FC = () => {
                 throw new Error(errBody?.message ?? `PATCH ${res.status}`);
             }
 
-            // Re-fetch from GET to get authoritative state after PATCH.
             await refetchNavigation();
         } catch (err) {
             console.error(err);
             setNavPatchError("Failed to update navigation");
-
-            // Precise rollback to the state before the optimistic update
             setNavigationMode(prevMode);
             setNavigationStyle(prevStyle);
         } finally {
@@ -596,45 +565,22 @@ const Dashboard: React.FC = () => {
     }, [robotId, navigationMode, navigationStyle, refetchNavigation]);
 
     // ── Toggle handler ────────────────────────────────────────────────────────
-    /**
-     * Handles the stationary ↔ autonomous toggle.
-     *
-     * Key behaviour:
-     * - If autonomous_ready is false → show "map not uploaded" popup and abort.
-     * - Block if a PATCH or GET is already in-flight.
-     * - Before switching TO autonomous: call GET first to ensure we have the
-     *   latest autonomous_ready / mode_active from the server.
-     * - After the optional GET resolves, read the current navigationStyle.
-     * - Optimistic UI update → patchNavigation → internal refetchNavigation
-     *   confirms or reverts the full state.
-     */
     const handleToggleNavigation = useCallback(async () => {
         if (!isAutonomousReady) { setShowMapNotUploadedPopup(true); return; }
         if (navPatchLoading || navFetchLoading) return;
 
         const next = navigationMode === "stationary" ? "autonomous" : "stationary";
 
-        // Before switching TO autonomous: fetch the latest robot state so that
-        // autonomous_ready and mode_active are current before we issue the PATCH.
         if (next === "autonomous") {
             await refetchNavigation();
         }
 
-        // Read style AFTER the GET resolves.
         const currentStyle = navigationStyle;
-
-        // Optimistic UI update
         setNavigationMode(next);
-
         patchNavigation(next, next === "autonomous" ? currentStyle : undefined);
     }, [isAutonomousReady, navPatchLoading, navFetchLoading, navigationMode, navigationStyle, patchNavigation, refetchNavigation]);
 
     // ── Style change handler ──────────────────────────────────────────────────
-    /**
-     * Changes the navigation style (free / strict / strict_with_autonomous).
-     * Only allowed when mode_active is true (enforced in JSX via disabled prop).
-     * Guards against concurrent PATCH or GET requests.
-     */
     const handleStyleChange = useCallback((style: "free" | "strict" | "strict_with_autonomous") => {
         if (navPatchLoading || navFetchLoading) return;
         setNavigationStyle(style);
@@ -666,6 +612,11 @@ const Dashboard: React.FC = () => {
 
                         // ── Map uploaded → refresh locations ──────────────────
                         if (payload.event === "upload_clicked" && payload.data?.status === true) {
+                            fetchLocations(robotId);
+                        }
+
+                        // ── Location updated → refresh locations ──────────────
+                        if (payload.event === "location_updated") {
                             fetchLocations(robotId);
                         }
 
@@ -731,32 +682,22 @@ const Dashboard: React.FC = () => {
                             armTempChannel.update(Number(payload.data?.temperature) || 0);
                         }
 
-                        // ── Autonomous ready (legacy event) ───────────────────
-                        // Trigger GET to get authoritative state including
-                        // autonomous_ready and mode_active from the server.
-                        if (payload.event === "autonomous_ready") {
+                        // ── Navigation updated / cross-client sync ────────────
+                        // Fire immediately — no gating required.
+                        if (
+                            payload.event === "navigation_updated" ||
+                            payload.event === "navigation_update"
+                        ) {
                             refetchNavigationRef.current();
                         }
 
-                        // ── Navigation updated (robot-side sync) ──────────────
-                        // Fired by the robot/backend when navigation state changes
-                        // on the robot's own side. Trigger GET for authoritative state.
-                        if (payload.event === "navigation_updated") {
-                            refetchNavigationRef.current();
-                        }
-
-                        // ── Mode active ───────────────────────────────────────
-                        // Targeted event fired when the robot confirms the selected
-                        // navigation mode has fully activated. Trigger GET to sync
-                        // mode_active and full navigation state from server.
+                        // ── mode_active → refetch navigation immediately ───────
                         if (payload.event === "mode_active") {
                             refetchNavigationRef.current();
                         }
 
-                        // ── Navigation update (cross-client sync) ─────────────
-                        // Fired by backend whenever any client (web or app) changes
-                        // navigation mode/style. Trigger GET to keep both UIs in sync.
-                        if (payload.event === "navigation_update") {
+                        // ── autonomous_ready → refetch navigation immediately ──
+                        if (payload.event === "autonomous_ready") {
                             refetchNavigationRef.current();
                         }
 
@@ -1120,8 +1061,6 @@ const Dashboard: React.FC = () => {
                                             ["strict_with_autonomous", "Strict Auto"],
                                         ] as const
                                     ).map(([value, label]) => {
-                                        // Only "free" is available before mode_active is true.
-                                        // "strict" and "strict_with_autonomous" require mode_active.
                                         const disabled = value !== "free" && !isModeActive;
                                         return (
                                             <button

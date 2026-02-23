@@ -600,7 +600,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                     {/* Status Badges */}
                     <div className="flex items-center gap-3 flex-wrap">
-
                         <span
                             className={`px-3 py-1 rounded-full text-xs font-medium ${
                                 wsConnected
@@ -1196,20 +1195,20 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                             {/* Joint Health Status */}
                             {robotJointStatus &&
-                            (robotJointStatus.left?.length > 0 ||
-                                robotJointStatus.right?.length > 0) ? (
+                            ((robotJointStatus.left?.length ?? 0) > 0 ||
+                                (robotJointStatus.right?.length ?? 0) > 0) ? (
                                 <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                     <h3 className="text-sm font-semibold text-gray-900 mb-3">
                                         Joint Health Status
                                     </h3>
                                     <div className="space-y-3">
-                                        {robotJointStatus.left?.length > 0 && (
+                                        {(robotJointStatus.left?.length ?? 0) > 0 && (
                                             <div>
                                                 <p className="text-sm font-medium text-gray-700 mb-2">
                                                     Left Arm
                                                 </p>
                                                 <div className="space-y-2 pl-3">
-                                                    {robotJointStatus.left.map(
+                                                    {robotJointStatus.left!.map(
                                                         (joint) => (
                                                             <div
                                                                 key={joint.id}
@@ -1263,13 +1262,13 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                                                 </div>
                                             </div>
                                         )}
-                                        {robotJointStatus.right?.length > 0 && (
+                                        {(robotJointStatus.right?.length ?? 0) > 0 && (
                                             <div className="pt-3 border-t border-gray-200">
                                                 <p className="text-sm font-medium text-gray-700 mb-2">
                                                     Right Arm
                                                 </p>
                                                 <div className="space-y-2 pl-3">
-                                                    {robotJointStatus.right.map(
+                                                    {robotJointStatus.right!.map(
                                                         (joint) => (
                                                             <div
                                                                 key={joint.id}
@@ -1336,20 +1335,20 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
 
                             {/* Joint Telemetry */}
                             {armJointStates &&
-                            (armJointStates.left?.length > 0 ||
-                                armJointStates.right?.length > 0) ? (
+                            ((armJointStates.left?.length ?? 0) > 0 ||
+                                (armJointStates.right?.length ?? 0) > 0) ? (
                                 <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                                     <h3 className="text-sm font-semibold text-gray-900 mb-3">
                                         Robot Joint Telemetry
                                     </h3>
                                     <div className="space-y-3">
-                                        {armJointStates.left?.length > 0 && (
+                                        {(armJointStates.left?.length ?? 0) > 0 && (
                                             <div>
                                                 <p className="text-sm font-medium text-gray-700 mb-2">
                                                     Left Arm
                                                 </p>
                                                 <div className="space-y-2 pl-3">
-                                                    {armJointStates.left.map(
+                                                    {armJointStates.left!.map(
                                                         (joint) => (
                                                             <div
                                                                 key={joint.id}
@@ -1409,13 +1408,13 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                                                 </div>
                                             </div>
                                         )}
-                                        {armJointStates.right?.length > 0 && (
+                                        {(armJointStates.right?.length ?? 0) > 0 && (
                                             <div className="pt-3 border-t border-gray-200">
                                                 <p className="text-sm font-medium text-gray-700 mb-2">
                                                     Right Arm
                                                 </p>
                                                 <div className="space-y-2 pl-3">
-                                                    {armJointStates.right.map(
+                                                    {armJointStates.right!.map(
                                                         (joint) => (
                                                             <div
                                                                 key={joint.id}

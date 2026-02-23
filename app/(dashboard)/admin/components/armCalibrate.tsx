@@ -56,15 +56,107 @@ interface WebSocketMessage {
 const HANDS: Hand[] = ["left", "right"];
 const POINTS: Point[] = ["point_one", "point_two", "point_three"];
 
-const INITIAL_HAND_STATE: HandState = {
-    left: false,
-    right: false,
-};
+const INITIAL_HAND_STATE: HandState = { left: false, right: false };
 
 const INITIAL_POINTS_STATE: PointsState = {
     left: { point_one: false, point_two: false, point_three: false },
     right: { point_one: false, point_two: false, point_three: false },
 };
+
+/* ===============================
+   DELETE CONFIRM MODAL
+================================ */
+function DeleteConfirmModal({
+    profile,
+    isDeleting,
+    onConfirm,
+    onCancel,
+}: {
+    profile: Profile;
+    isDeleting: boolean;
+    onConfirm: () => void;
+    onCancel: () => void;
+}) {
+    return (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
+                style={{ animation: "modalPop 0.18s cubic-bezier(0.34,1.56,0.64,1) both" }}
+            >
+                <style>{`
+                    @keyframes modalPop {
+                        from { opacity: 0; transform: scale(0.92) translateY(8px); }
+                        to   { opacity: 1; transform: scale(1) translateY(0); }
+                    }
+                `}</style>
+
+                {/* PopUp Modal */}
+
+                <div className="p-6">
+                    {/* Icon */}
+                    <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-50 border border-red-100 mx-auto mb-4">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-6 w-6 text-red-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                        </svg>
+                    </div>
+
+                    <h3 className="text-lg font-semibold text-gray-900 text-center mb-1">
+                        Delete Profile
+                    </h3>
+                    <p className="text-sm text-gray-500 text-center mb-1">
+                        Are you sure you want to delete
+                    </p>
+                    <p className="text-sm font-semibold text-gray-800 text-center mb-5 truncate px-2">
+                        &ldquo;{profile.name}&rdquo;?
+                    </p>
+                    <p className="text-xs text-red-500 text-center mb-6">
+                        This action cannot be undone.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            onClick={onCancel}
+                            disabled={isDeleting}
+                            className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onConfirm}
+                            disabled={isDeleting}
+                            className="px-4 py-2.5 rounded-xl bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                        >
+                            {isDeleting ? (
+                                <>
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                                    </svg>
+                                    Deleting...
+                                </>
+                            ) : (
+                                "Delete"
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 /* ===============================
    MAIN COMPONENT
@@ -91,23 +183,19 @@ export default function ArmCalibration({
     const [selectedPoints, setSelectedPoints] = useState<{
         left: Set<Point>;
         right: Set<Point>;
-    }>({
-        left: new Set(),
-        right: new Set(),
+    }>({ left: new Set(), right: new Set() });
+
+    // FIX 3: pointsUnlocked gates per-hand checkbox interactivity.
+    // Stays false until the first WS point-data event arrives for that hand.
+    const [pointsUnlocked, setPointsUnlocked] = useState<{ left: boolean; right: boolean }>({
+        left: false,
+        right: false,
     });
 
     // Point data values from WebSocket
     const [pointData, setPointData] = useState<{
-        left: {
-            point_one: number[] | null;
-            point_two: number[] | null;
-            point_three: number[] | null;
-        };
-        right: {
-            point_one: number[] | null;
-            point_two: number[] | null;
-            point_three: number[] | null;
-        };
+        left: { point_one: number[] | null; point_two: number[] | null; point_three: number[] | null };
+        right: { point_one: number[] | null; point_two: number[] | null; point_three: number[] | null };
     }>({
         left: { point_one: null, point_two: null, point_three: null },
         right: { point_one: null, point_two: null, point_three: null },
@@ -118,6 +206,8 @@ export default function ArmCalibration({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [deletingId, setDeletingId] = useState<number | null>(null);
+    // FIX 1: confirmDeleteId drives the custom delete modal (null = closed)
+    const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
     // WebSocket State
     const [ws, setWs] = useState<WebSocket | null>(null);
@@ -126,10 +216,7 @@ export default function ArmCalibration({
 
     // Test Completion Modal State
     const [showTestModal, setShowTestModal] = useState(false);
-    const [testCompletedHands, setTestCompletedHands] = useState<{
-        left: boolean;
-        right: boolean;
-    }>({
+    const [testCompletedHands, setTestCompletedHands] = useState<{ left: boolean; right: boolean }>({
         left: false,
         right: false,
     });
@@ -140,34 +227,24 @@ export default function ArmCalibration({
     /* ===============================
        EFFECTS
     ================================ */
-    useEffect(() => {
-        fetchProfiles();
-    }, [robotId]);
+    useEffect(() => { fetchProfiles(); }, [robotId]);
 
-    // Fetch calibration status whenever selectedProfileId changes
     useEffect(() => {
-        if (selectedProfileId) {
-            fetchCalibrationStatus(selectedProfileId);
-        }
+        if (selectedProfileId) fetchCalibrationStatus(selectedProfileId);
     }, [selectedProfileId]);
 
     // WebSocket connection effect
     useEffect(() => {
         const wsUrl = `ws://192.168.0.216:8002/ws/robot_message/${roboId}/profile/`;
-
         const websocket = new WebSocket(wsUrl);
 
         websocket.onopen = () => {
             setWsConnected(true);
-
             if (selectedProfileId) {
-                const message = {
+                websocket.send(JSON.stringify({
                     event: "profile_clicked",
-                    data: {
-                        profile_id: selectedProfileId,
-                    },
-                };
-                websocket.send(JSON.stringify(message));
+                    data: { profile_id: selectedProfileId },
+                }));
             }
         };
 
@@ -175,94 +252,56 @@ export default function ArmCalibration({
             try {
                 const data: WebSocketMessage = JSON.parse(event.data);
 
-                if (
-                    data.type === "hand_toggle" &&
-                    data.hand !== undefined &&
-                    data.active !== undefined
-                ) {
-                    setHands((prev) => ({
-                        ...prev,
-                        [data.hand!]: data.active!,
-                    }));
+                if (data.type === "hand_toggle" && data.hand !== undefined && data.active !== undefined) {
+                    setHands((prev) => ({ ...prev, [data.hand!]: data.active! }));
                     if (!data.active) {
                         resetHandPoints(data.hand);
+                        setPointsUnlocked((prev) => ({ ...prev, [data.hand!]: false }));
                     }
-                    setWsMessage(
-                        `${data.hand} hand ${data.active ? "enabled" : "disabled"}`,
-                    );
+                    setWsMessage(`${data.hand} hand ${data.active ? "enabled" : "disabled"}`);
                     setTimeout(() => setWsMessage(null), 3000);
-                } else if (
-                    data.type === "point_toggle" &&
-                    data.hand !== undefined &&
-                    data.point !== undefined &&
-                    data.active !== undefined
-                ) {
+                } else if (data.type === "point_toggle" && data.hand !== undefined && data.point !== undefined && data.active !== undefined) {
                     setPoints((prev) => ({
                         ...prev,
-                        [data.hand!]: {
-                            ...prev[data.hand!],
-                            [data.point!]: data.active!,
-                        },
+                        [data.hand!]: { ...prev[data.hand!], [data.point!]: data.active! },
                     }));
-                    const pointName = data.point.replace(/_/g, " ");
-                    setWsMessage(
-                        `${data.hand} ${pointName} ${data.active ? "set" : "unset"}`,
-                    );
+                    setWsMessage(`${data.hand} ${data.point.replace(/_/g, " ")} ${data.active ? "set" : "unset"}`);
                     setTimeout(() => setWsMessage(null), 3000);
                 } else if (data.calibration_status !== undefined) {
                     setCalibrationActive(data.calibration_status);
-                    if (!data.calibration_status) {
-                        resetCalibrationState();
-                    }
-                    setWsMessage(
-                        `Calibration ${data.calibration_status ? "activated" : "deactivated"}`,
-                    );
+                    if (!data.calibration_status) resetCalibrationState();
+                    setWsMessage(`Calibration ${data.calibration_status ? "activated" : "deactivated"}`);
                     setTimeout(() => setWsMessage(null), 3000);
                 }
 
-                const pointDataEventPattern =
-                    /^(left|right)_(point_one|point_two|point_three)_data$/;
+                const pointDataEventPattern = /^(left|right)_(point_one|point_two|point_three)_data$/;
                 const match = (data as any).event?.match(pointDataEventPattern);
-
                 if (match) {
                     const hand = match[1] as Hand;
                     const point = match[2] as Point;
                     const values = (data as any).data?.data?.values;
-
                     if (values && Array.isArray(values)) {
-                        setPointData((prev) => ({
-                            ...prev,
-                            [hand]: {
-                                ...prev[hand],
-                                [point]: values,
-                            },
-                        }));
-                        setWsMessage(
-                            `${hand} ${point.replace(/_/g, " ")} data received`,
-                        );
+                        setPointData((prev) => ({ ...prev, [hand]: { ...prev[hand], [point]: values } }));
+                        // FIX 3: unlock checkboxes for this hand once WS data arrives
+                        setPointsUnlocked((prev) => ({ ...prev, [hand]: true }));
+                        setWsMessage(`${hand} ${point.replace(/_/g, " ")} data received`);
                         setTimeout(() => setWsMessage(null), 3000);
                     }
                 }
 
                 const testCompletedPattern = /^test_completed_(left|right)$/;
                 const testMatch = (data as any).event?.match(testCompletedPattern);
-
                 if (testMatch) {
                     const hand = testMatch[1] as Hand;
                     const value = (data as any).data?.value;
-
                     if (value === "true" || value === true) {
-                        setTestCompletedHands((prev) => ({
-                            ...prev,
-                            [hand]: true,
-                        }));
+                        setTestCompletedHands((prev) => ({ ...prev, [hand]: true }));
                         setShowTestModal(true);
                         setWsMessage(`Test completed for ${hand} hand`);
                         setTimeout(() => setWsMessage(null), 3000);
                     }
                 }
 
-                // Handle ready_for_data_collection event
                 if ((data as any).event === "ready_for_data_collection") {
                     setHandsReady(true);
                     setWsMessage("Ready for data collection - You can now select a hand");
@@ -271,32 +310,18 @@ export default function ArmCalibration({
             } catch (err) {}
         };
 
-        websocket.onerror = () => {
-            setWsConnected(false);
-        };
-
-        websocket.onclose = () => {
-            setWsConnected(false);
-        };
-
+        websocket.onerror = () => setWsConnected(false);
+        websocket.onclose = () => setWsConnected(false);
         setWs(websocket);
 
-        return () => {
-            if (websocket.readyState === WebSocket.OPEN) {
-                websocket.close();
-            }
-        };
+        return () => { if (websocket.readyState === WebSocket.OPEN) websocket.close(); };
     }, [robotId, roboId, selectedProfileId]);
 
-    // Camera feed sync effect
+    // Camera feed sync
     useEffect(() => {
-        if (hands.left && !hands.right) {
-            setActiveHandCamera("left");
-        } else if (hands.right && !hands.left) {
-            setActiveHandCamera("right");
-        } else if (!hands.left && !hands.right) {
-            setActiveHandCamera(null);
-        }
+        if (hands.left && !hands.right) setActiveHandCamera("left");
+        else if (hands.right && !hands.left) setActiveHandCamera("right");
+        else if (!hands.left && !hands.right) setActiveHandCamera(null);
     }, [hands.left, hands.right]);
 
     /* ===============================
@@ -305,59 +330,39 @@ export default function ArmCalibration({
     const resetCalibrationState = useCallback(() => {
         setHands(INITIAL_HAND_STATE);
         setPoints(INITIAL_POINTS_STATE);
-        setSelectedPoints({
-            left: new Set(),
-            right: new Set(),
-        });
+        setSelectedPoints({ left: new Set(), right: new Set() });
         setPointData({
             left: { point_one: null, point_two: null, point_three: null },
             right: { point_one: null, point_two: null, point_three: null },
         });
         setHandsReady(false);
         setActiveHandCamera(null);
+        setPointsUnlocked({ left: false, right: false });
     }, []);
 
     const resetHandPoints = useCallback((hand: Hand) => {
-        setPoints((prev) => ({
-            ...prev,
-            [hand]: { point_one: false, point_two: false, point_three: false },
-        }));
-        setPointData((prev) => ({
-            ...prev,
-            [hand]: { point_one: null, point_two: null, point_three: null },
-        }));
-        setSelectedPoints((prev) => ({
-            ...prev,
-            [hand]: new Set(),
-        }));
+        setPoints((prev) => ({ ...prev, [hand]: { point_one: false, point_two: false, point_three: false } }));
+        setPointData((prev) => ({ ...prev, [hand]: { point_one: null, point_two: null, point_three: null } }));
+        setSelectedPoints((prev) => ({ ...prev, [hand]: new Set() }));
+        setPointsUnlocked((prev) => ({ ...prev, [hand]: false }));
     }, []);
 
     const handleApiError = (error: unknown, context: string) => {
-        const message =
-            error instanceof Error
-                ? error.message
-                : "An unexpected error occurred";
+        const message = error instanceof Error ? error.message : "An unexpected error occurred";
         setError(`${context}: ${message}`);
     };
 
     const clearError = () => setError(null);
 
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        return date.toLocaleString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
+    const formatDate = (dateString: string) =>
+        new Date(dateString).toLocaleString("en-US", {
+            year: "numeric", month: "short", day: "numeric",
+            hour: "2-digit", minute: "2-digit",
         });
-    };
 
     /* ===============================
        API CALLS
     ================================ */
-
-    // ─── Fetch calibration status from GET endpoint ────────────────────────────
     const fetchCalibrationStatus = async (profileId: number = selectedProfileId!) => {
         if (!profileId) return;
         try {
@@ -371,16 +376,11 @@ export default function ArmCalibration({
             const d = json?.data;
             if (!d) return;
 
-            // 1. Calibration active
             const isActive = Boolean(d.calibration_status);
             setCalibrationActive(isActive);
 
-            // 2. Hand active states
-            const leftActive  = Boolean(d.left_hand_active);
-            const rightActive = Boolean(d.right_hand_active);
-            setHands({ left: leftActive, right: rightActive });
+            setHands({ left: Boolean(d.left_hand_active), right: Boolean(d.right_hand_active) });
 
-            // 3. Point data values
             setPointData({
                 left: {
                     point_one:   d.left_point_one?.values   ?? null,
@@ -394,7 +394,6 @@ export default function ArmCalibration({
                 },
             });
 
-            // 4. Point active states -> selectedPoints
             const buildSelectedSet = (p1: boolean, p2: boolean, p3: boolean): Set<Point> => {
                 const s = new Set<Point>();
                 if (p1) s.add("point_one");
@@ -404,69 +403,36 @@ export default function ArmCalibration({
             };
 
             setSelectedPoints({
-                left: buildSelectedSet(
-                    Boolean(d.left_point_one_active),
-                    Boolean(d.left_point_two_active),
-                    Boolean(d.left_point_three_active),
-                ),
-                right: buildSelectedSet(
-                    Boolean(d.right_point_one_active),
-                    Boolean(d.right_point_two_active),
-                    Boolean(d.right_point_three_active),
-                ),
+                left: buildSelectedSet(Boolean(d.left_point_one_active), Boolean(d.left_point_two_active), Boolean(d.left_point_three_active)),
+                right: buildSelectedSet(Boolean(d.right_point_one_active), Boolean(d.right_point_two_active), Boolean(d.right_point_three_active)),
             });
 
-            // 5. Points state
             setPoints({
-                left: {
-                    point_one:   Boolean(d.left_point_one_active),
-                    point_two:   Boolean(d.left_point_two_active),
-                    point_three: Boolean(d.left_point_three_active),
-                },
-                right: {
-                    point_one:   Boolean(d.right_point_one_active),
-                    point_two:   Boolean(d.right_point_two_active),
-                    point_three: Boolean(d.right_point_three_active),
-                },
+                left: { point_one: Boolean(d.left_point_one_active), point_two: Boolean(d.left_point_two_active), point_three: Boolean(d.left_point_three_active) },
+                right: { point_one: Boolean(d.right_point_one_active), point_two: Boolean(d.right_point_two_active), point_three: Boolean(d.right_point_three_active) },
             });
 
-            // 6. If calibration off -> full reset
-            if (!isActive) {
-                resetCalibrationState();
-            }
+            if (!isActive) resetCalibrationState();
         } catch (err) {
             handleApiError(err, "Failed to fetch calibration status");
         }
     };
-    // ──────────────────────────────────────────────────────────────────────────
 
     const fetchProfiles = async () => {
         clearError();
         setLoading(true);
-
         try {
-            const res = await fetchWithAuth(
-                `${API_BASE_URL}/robots/${robotId}/profiles/`,
-                { method: "GET" },
-            );
-
-            if (!res.ok)
-                throw new Error(`Failed to fetch profiles: ${res.statusText}`);
+            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/profiles/`, { method: "GET" });
+            if (!res.ok) throw new Error(`Failed to fetch profiles: ${res.statusText}`);
 
             const response = await res.json();
             let profilesArray: Profile[] = [];
 
-            if (response.success && Array.isArray(response.data)) {
-                profilesArray = response.data;
-            } else if (Array.isArray(response)) {
-                profilesArray = response;
-            } else if (response && Array.isArray(response.results)) {
-                profilesArray = response.results;
-            } else if (response && Array.isArray(response.profiles)) {
-                profilesArray = response.profiles;
-            } else if (response && typeof response === "object") {
-                profilesArray = [response];
-            }
+            if (response.success && Array.isArray(response.data)) profilesArray = response.data;
+            else if (Array.isArray(response)) profilesArray = response;
+            else if (response?.results && Array.isArray(response.results)) profilesArray = response.results;
+            else if (response?.profiles && Array.isArray(response.profiles)) profilesArray = response.profiles;
+            else if (response && typeof response === "object") profilesArray = [response];
 
             setProfiles(profilesArray);
         } catch (err) {
@@ -477,32 +443,35 @@ export default function ArmCalibration({
         }
     };
 
+    // FIX 2: Unwrap { success, data } envelope returned by the server on create
     const createProfile = async () => {
-        if (!newProfileName.trim()) {
-            setError("Profile name cannot be empty");
-            return;
-        }
-
+        if (!newProfileName.trim()) { setError("Profile name cannot be empty"); return; }
         clearError();
         setCreatingProfile(true);
-
         try {
-            const res = await fetchWithAuth(
-                `${API_BASE_URL}/robots/${robotId}/profiles/`,
-                {
-                    method: "POST",
-                    body: JSON.stringify({ name: newProfileName.trim() }),
-                },
-            );
+            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/profiles/`, {
+                method: "POST",
+                body: JSON.stringify({ name: newProfileName.trim() }),
+            });
+            if (!res.ok) throw new Error(`Failed to create profile: ${res.statusText}`);
 
-            if (!res.ok)
-                throw new Error(`Failed to create profile: ${res.statusText}`);
+            const response = await res.json();
 
-            const data: Profile = await res.json();
-            setProfiles((prev) => [...prev, data]);
+            // Server wraps the created object in { success: true, data: {...} }
+            // Fall back to flat object if the envelope is absent
+            let profile: Profile;
+            if (response?.success && response?.data) {
+                profile = response.data;
+            } else if (response?.id) {
+                profile = response;
+            } else {
+                throw new Error("Unexpected response format from server");
+            }
+
+            setProfiles((prev) => [...prev, profile]);
             setNewProfileName("");
             setShowCreateForm(false);
-            selectProfile(data);
+            selectProfile(profile);
         } catch (err) {
             handleApiError(err, "Failed to create profile");
         } finally {
@@ -510,23 +479,18 @@ export default function ArmCalibration({
         }
     };
 
+    // FIX 1: deleteProfile — called by the custom modal's Confirm button
     const deleteProfile = async (profileId: number) => {
-        if (!confirm("Are you sure you want to delete this profile?")) return;
-
         clearError();
         setDeletingId(profileId);
-
         try {
             const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/profiles/${profileId}/`,
-                { method: "DELETE" },
+                { method: "DELETE" }
             );
-
-            if (!res.ok)
-                throw new Error(`Failed to delete profile: ${res.statusText}`);
+            if (!res.ok) throw new Error(`Failed to delete profile: ${res.statusText}`);
 
             setProfiles((prev) => prev.filter((p) => p.id !== profileId));
-
             if (selectedProfileId === profileId) {
                 setSelectedProfileId(null);
                 setSelectedProfile(null);
@@ -536,34 +500,21 @@ export default function ArmCalibration({
             handleApiError(err, "Failed to delete profile");
         } finally {
             setDeletingId(null);
+            setConfirmDeleteId(null);
         }
     };
 
     const toggleCalibration = async (active: boolean) => {
-        if (!selectedProfileId) {
-            setError("Profile must be selected first");
-            return false;
-        }
-
+        if (!selectedProfileId) { setError("Profile must be selected first"); return false; }
         clearError();
         setLoading(true);
-
         try {
             const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/profiles/${selectedProfileId}/calibration/`,
-                {
-                    method: "PATCH",
-                    body: JSON.stringify({ calibration_status: active }),
-                },
+                { method: "PATCH", body: JSON.stringify({ calibration_status: active }) }
             );
-
-            if (!res.ok)
-                throw new Error(`Failed to toggle calibration: ${res.statusText}`);
-
-            // ─── Re-fetch calibration status after PATCH ───────────────────
+            if (!res.ok) throw new Error(`Failed to toggle calibration: ${res.statusText}`);
             await fetchCalibrationStatus(selectedProfileId);
-            // ──────────────────────────────────────────────────────────────
-
             return true;
         } catch (err) {
             handleApiError(err, "Failed to toggle calibration");
@@ -574,30 +525,16 @@ export default function ArmCalibration({
     };
 
     const toggleHand = async (hand: Hand, active: boolean) => {
-        if (!selectedProfileId) {
-            setError("Profile must be selected first");
-            return false;
-        }
-
+        if (!selectedProfileId) { setError("Profile must be selected first"); return false; }
         clearError();
         setLoading(true);
-
         try {
             const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/profiles/${selectedProfileId}/calibration/hand/`,
-                {
-                    method: "PATCH",
-                    body: JSON.stringify({ hand, active }),
-                },
+                { method: "PATCH", body: JSON.stringify({ hand, active }) }
             );
-
-            if (!res.ok)
-                throw new Error(`Failed to toggle ${hand} hand: ${res.statusText}`);
-
-            // ─── Re-fetch calibration status after PATCH ───────────────────
+            if (!res.ok) throw new Error(`Failed to toggle ${hand} hand: ${res.statusText}`);
             await fetchCalibrationStatus(selectedProfileId);
-            // ──────────────────────────────────────────────────────────────
-
             return true;
         } catch (err) {
             handleApiError(err, `Failed to toggle ${hand} hand`);
@@ -608,35 +545,17 @@ export default function ArmCalibration({
     };
 
     const togglePoint = async (hand: Hand, point: Point, active: boolean) => {
-        if (!selectedProfileId) {
-            setError("Profile must be selected first");
-            return false;
-        }
-
-        if (!hands[hand]) {
-            setError(`${hand} hand must be enabled first`);
-            return false;
-        }
-
+        if (!selectedProfileId) { setError("Profile must be selected first"); return false; }
+        if (!hands[hand]) { setError(`${hand} hand must be enabled first`); return false; }
         clearError();
         setLoading(true);
-
         try {
             const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/profiles/${selectedProfileId}/calibration/point/`,
-                {
-                    method: "PATCH",
-                    body: JSON.stringify({ hand, point, active }),
-                },
+                { method: "PATCH", body: JSON.stringify({ hand, point, active }) }
             );
-
-            if (!res.ok)
-                throw new Error(`Failed to toggle ${hand} ${point}: ${res.statusText}`);
-
-            // ─── Re-fetch calibration status after PATCH ───────────────────
+            if (!res.ok) throw new Error(`Failed to toggle ${hand} ${point}: ${res.statusText}`);
             await fetchCalibrationStatus(selectedProfileId);
-            // ──────────────────────────────────────────────────────────────
-
             setWsMessage(`${hand} ${point.replace(/_/g, " ")} ${active ? "activated" : "deactivated"}`);
             setTimeout(() => setWsMessage(null), 3000);
             return true;
@@ -649,41 +568,19 @@ export default function ArmCalibration({
     };
 
     const testPoints = async (hand: Hand) => {
-        if (!selectedProfileId) {
-            setError("Profile must be selected first");
-            return false;
-        }
-
-        if (!hands[hand]) {
-            setError(`${hand} hand must be enabled first`);
-            return false;
-        }
-
+        if (!selectedProfileId) { setError("Profile must be selected first"); return false; }
+        if (!hands[hand]) { setError(`${hand} hand must be enabled first`); return false; }
         const pointsToTest = Array.from(selectedPoints[hand]);
-        if (pointsToTest.length === 0) {
-            setError(`Please select at least one point for ${hand} hand`);
-            return false;
-        }
-
+        if (pointsToTest.length === 0) { setError(`Please select at least one point for ${hand} hand`); return false; }
         clearError();
         setLoading(true);
-
         try {
             const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/profiles/${selectedProfileId}/calibration/test/`,
-                {
-                    method: "PATCH",
-                    body: JSON.stringify({ hand, points: pointsToTest }),
-                },
+                { method: "PATCH", body: JSON.stringify({ hand, points: pointsToTest }) }
             );
-
-            if (!res.ok)
-                throw new Error(`Failed to test ${hand} hand: ${res.statusText}`);
-
-            // ─── Re-fetch calibration status after PATCH ───────────────────
+            if (!res.ok) throw new Error(`Failed to test ${hand} hand: ${res.statusText}`);
             await fetchCalibrationStatus(selectedProfileId);
-            // ──────────────────────────────────────────────────────────────
-
             setWsMessage(`Testing ${pointsToTest.length} point(s) on ${hand} hand...`);
             setTimeout(() => setWsMessage(null), 3000);
             return true;
@@ -696,41 +593,19 @@ export default function ArmCalibration({
     };
 
     const retryPoints = async (hand: Hand) => {
-        if (!selectedProfileId) {
-            setError("Profile must be selected first");
-            return false;
-        }
-
-        if (!hands[hand]) {
-            setError(`${hand} hand must be enabled first`);
-            return false;
-        }
-
+        if (!selectedProfileId) { setError("Profile must be selected first"); return false; }
+        if (!hands[hand]) { setError(`${hand} hand must be enabled first`); return false; }
         const pointsToRetry = Array.from(selectedPoints[hand]);
-        if (pointsToRetry.length === 0) {
-            setError(`Please select at least one point for ${hand} hand`);
-            return false;
-        }
-
+        if (pointsToRetry.length === 0) { setError(`Please select at least one point for ${hand} hand`); return false; }
         clearError();
         setLoading(true);
-
         try {
             const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/profiles/${selectedProfileId}/calibration/retry/`,
-                {
-                    method: "PATCH",
-                    body: JSON.stringify({ hand, points: pointsToRetry }),
-                },
+                { method: "PATCH", body: JSON.stringify({ hand, points: pointsToRetry }) }
             );
-
-            if (!res.ok)
-                throw new Error(`Failed to retry ${hand} hand: ${res.statusText}`);
-
-            // ─── Re-fetch calibration status after PATCH ───────────────────
+            if (!res.ok) throw new Error(`Failed to retry ${hand} hand: ${res.statusText}`);
             await fetchCalibrationStatus(selectedProfileId);
-            // ──────────────────────────────────────────────────────────────
-
             setWsMessage(`Retrying ${pointsToRetry.length} point(s) on ${hand} hand...`);
             setTimeout(() => setWsMessage(null), 3000);
             return true;
@@ -743,49 +618,24 @@ export default function ArmCalibration({
     };
 
     const updatePoints = async (hand: Hand) => {
-        if (!selectedProfileId) {
-            setError("Profile must be selected first");
-            return false;
-        }
-
-        if (!hands[hand]) {
-            setError(`${hand} hand must be enabled first`);
-            return false;
-        }
-
+        if (!selectedProfileId) { setError("Profile must be selected first"); return false; }
+        if (!hands[hand]) { setError(`${hand} hand must be enabled first`); return false; }
         const pointsToUpdate = Array.from(selectedPoints[hand]);
-        if (pointsToUpdate.length === 0) {
-            setError(`Please select at least one point for ${hand} hand`);
-            return false;
-        }
-
+        if (pointsToUpdate.length === 0) { setError(`Please select at least one point for ${hand} hand`); return false; }
         const missingData = pointsToUpdate.filter((point) => !pointData[hand][point]);
         if (missingData.length > 0) {
-            setError(
-                `Missing data for: ${missingData.map((p) => p.replace(/_/g, " ")).join(", ")}`,
-            );
+            setError(`Missing data for: ${missingData.map((p) => p.replace(/_/g, " ")).join(", ")}`);
             return false;
         }
-
         clearError();
         setLoading(true);
-
         try {
             const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/profiles/${selectedProfileId}/calibration/update/`,
-                {
-                    method: "PATCH",
-                    body: JSON.stringify({ hand }),
-                },
+                { method: "PATCH", body: JSON.stringify({ hand }) }
             );
-
-            if (!res.ok)
-                throw new Error(`Failed to update ${hand} hand: ${res.statusText}`);
-
-            // ─── Re-fetch calibration status after PATCH ───────────────────
+            if (!res.ok) throw new Error(`Failed to update ${hand} hand: ${res.statusText}`);
             await fetchCalibrationStatus(selectedProfileId);
-            // ──────────────────────────────────────────────────────────────
-
             setWsMessage(`Updated ${pointsToUpdate.length} point(s) on ${hand} hand successfully`);
             setTimeout(() => setWsMessage(null), 3000);
             return true;
@@ -800,55 +650,28 @@ export default function ArmCalibration({
     /* ===============================
        EVENT HANDLERS
     ================================ */
-
     const selectProfile = (profile: Profile) => {
         setSelectedProfile(profile);
         setSelectedProfileId(profile.id);
         resetCalibrationState();
         setCalibrationActive(false);
-        // fetchCalibrationStatus is triggered via useEffect on selectedProfileId change
-    };
-
-    const deselectProfile = () => {
-        setSelectedProfile(null);
-        setSelectedProfileId(null);
-        resetCalibrationState();
-        setCalibrationActive(false);
     };
 
     const onCalibrationToggle = async () => {
-        if (!selectedProfileId) {
-            setError("Please select a profile first");
-            return;
-        }
-
-        const next = !calibrationActive;
-        await toggleCalibration(next);
-        // State is now set inside fetchCalibrationStatus called inside toggleCalibration
+        if (!selectedProfileId) { setError("Please select a profile first"); return; }
+        await toggleCalibration(!calibrationActive);
     };
 
     const onHandToggle = async (hand: Hand) => {
-        if (!calibrationActive) {
-            setError("Calibration must be active to toggle hands");
-            return;
-        }
-
-        if (!handsReady) {
-            setError("Waiting for ready_for_data_collection event...");
-            return;
-        }
+        if (!calibrationActive) { setError("Calibration must be active to toggle hands"); return; }
+        if (!handsReady) { setError("Waiting for ready_for_data_collection event..."); return; }
 
         const next = !hands[hand];
-
         if (next) {
             const otherHand: Hand = hand === "left" ? "right" : "left";
-
             if (hands[otherHand]) {
-                const disableSuccess = await toggleHand(otherHand, false);
-                if (!disableSuccess) {
-                    setError(`Failed to disable ${otherHand} hand`);
-                    return;
-                }
+                const ok = await toggleHand(otherHand, false);
+                if (!ok) { setError(`Failed to disable ${otherHand} hand`); return; }
                 setHands((prev) => ({ ...prev, [otherHand]: false }));
                 resetHandPoints(otherHand);
             }
@@ -861,22 +684,21 @@ export default function ArmCalibration({
         }
     };
 
+    // FIX 3: gate point clicks on pointsUnlocked[hand]
     const onPointClick = async (hand: Hand, point: Point) => {
-        if (!hands[hand]) {
-            setError(`${hand} hand must be enabled first`);
+        if (!hands[hand]) { setError(`${hand} hand must be enabled first`); return; }
+        if (!pointsUnlocked[hand]) {
+            setError(`Waiting for robot data before selecting points on ${hand} hand`);
             return;
         }
-
-        const isCurrentlySelected = selectedPoints[hand].has(point);
-        if (isCurrentlySelected) return;
+        if (selectedPoints[hand].has(point)) return;
 
         const success = await togglePoint(hand, point, true);
-
         if (success) {
             setSelectedPoints((prev) => {
-                const newSet = new Set(prev[hand]);
-                newSet.add(point);
-                return { ...prev, [hand]: newSet };
+                const s = new Set(prev[hand]);
+                s.add(point);
+                return { ...prev, [hand]: s };
             });
         }
     };
@@ -904,6 +726,11 @@ export default function ArmCalibration({
         onClose();
     };
 
+    // Derived: profile being confirmed for delete
+    const profileToDelete = confirmDeleteId !== null
+        ? profiles.find((p) => p.id === confirmDeleteId) ?? null
+        : null;
+
     /* ===============================
        RENDER
     ================================ */
@@ -911,44 +738,33 @@ export default function ArmCalibration({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             {/* Modal Container */}
             <div className="relative bg-white rounded-xl shadow-xl border border-gray-200 w-[80%] max-h-[90vh] overflow-hidden">
+
+                {/* ── FIX 1: Custom Delete Confirmation Modal ──────────────── */}
+                {profileToDelete && (
+                    <DeleteConfirmModal
+                        profile={profileToDelete}
+                        isDeleting={deletingId === profileToDelete.id}
+                        onConfirm={() => deleteProfile(profileToDelete.id)}
+                        onCancel={() => setConfirmDeleteId(null)}
+                    />
+                )}
+                {/* ─────────────────────────────────────────────────────────── */}
+
                 {/* Header */}
                 <div className="bg-white border-b border-gray-200 px-8 py-6">
                     <div className="flex items-center justify-between">
                         <div>
-                            <h1 className="text-2xl font-bold text-gray-900">
-                                Robotic Calibration Dashboard
-                            </h1>
-                            <p className="text-sm text-gray-500 mt-1">
-                                Robot ID: {roboId}
-                            </p>
+                            <h1 className="text-2xl font-bold text-gray-900">Robotic Calibration Dashboard</h1>
+                            <p className="text-sm text-gray-500 mt-1">Robot ID: {roboId}</p>
                         </div>
                         <div className="flex items-center gap-3">
-                            <div
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${
-                                    wsConnected
-                                        ? "bg-emerald-50 border-emerald-200"
-                                        : "bg-red-50 border-red-200"
-                                }`}
-                            >
-                                <div
-                                    className={`w-2 h-2 rounded-full ${
-                                        wsConnected ? "bg-emerald-500" : "bg-red-500"
-                                    }`}
-                                ></div>
-                                <span
-                                    className={`text-sm font-medium ${
-                                        wsConnected ? "text-emerald-700" : "text-red-700"
-                                    }`}
-                                >
+                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${wsConnected ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+                                <div className={`w-2 h-2 rounded-full ${wsConnected ? "bg-emerald-500" : "bg-red-500"}`} />
+                                <span className={`text-sm font-medium ${wsConnected ? "text-emerald-700" : "text-red-700"}`}>
                                     {wsConnected ? "Connected" : "Disconnected"}
                                 </span>
                             </div>
-                            <button
-                                onClick={handleClose}
-                                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-                            >
-                                ×
-                            </button>
+                            <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 text-2xl font-bold">×</button>
                         </div>
                     </div>
                 </div>
@@ -963,7 +779,7 @@ export default function ArmCalibration({
                             </div>
                         )}
 
-                        {/* ERROR */}
+                        {/* Error */}
                         {error && (
                             <div className="mb-6 bg-red-50 border border-red-200 p-4 rounded-lg">
                                 <div className="flex items-start justify-between">
@@ -971,25 +787,18 @@ export default function ArmCalibration({
                                         <p className="text-sm font-semibold text-red-900">Error</p>
                                         <p className="text-sm text-red-700">{error}</p>
                                     </div>
-                                    <button
-                                        onClick={clearError}
-                                        className="text-red-500 hover:text-red-700 text-xl font-bold"
-                                    >
-                                        ×
-                                    </button>
+                                    <button onClick={clearError} className="text-red-500 hover:text-red-700 text-xl font-bold">×</button>
                                 </div>
                             </div>
                         )}
 
-                        {/* MAIN GRID */}
+                        {/* Main Grid */}
                         <div className="grid grid-cols-12 gap-6">
-                            {/* LEFT SIDEBAR: PROFILE LIST */}
+                            {/* LEFT SIDEBAR: Profile List */}
                             <div className="col-span-3">
                                 <div className="bg-white rounded-lg border border-gray-200 p-5">
                                     <div className="flex items-center justify-between mb-4">
-                                        <h2 className="text-base font-semibold text-gray-900">
-                                            Profiles
-                                        </h2>
+                                        <h2 className="text-base font-semibold text-gray-900">Profiles</h2>
                                         <button
                                             onClick={() => setShowCreateForm(!showCreateForm)}
                                             className="text-sm font-medium text-emerald-600 hover:text-emerald-700"
@@ -1000,10 +809,7 @@ export default function ArmCalibration({
 
                                     {showCreateForm && (
                                         <form
-                                            onSubmit={(e) => {
-                                                e.preventDefault();
-                                                createProfile();
-                                            }}
+                                            onSubmit={(e) => { e.preventDefault(); createProfile(); }}
                                             className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200"
                                         >
                                             <input
@@ -1042,18 +848,40 @@ export default function ArmCalibration({
                                                     }`}
                                                 >
                                                     <div className="flex items-center justify-between mb-1">
-                                                        <h3 className="text-sm font-medium text-gray-900">
+                                                        <h3 className="text-sm font-medium text-gray-900 truncate flex-1 mr-2">
                                                             {profile.name}
                                                         </h3>
-                                                        {selectedProfileId === profile.id && (
-                                                            <span className="px-2 py-0.5 bg-emerald-600 text-white text-xs rounded font-medium">
-                                                                Active
-                                                            </span>
-                                                        )}
+                                                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                            {selectedProfileId === profile.id && (
+                                                                <span className="px-2 py-0.5 bg-emerald-600 text-white text-xs rounded font-medium">
+                                                                    Active
+                                                                </span>
+                                                            )}
+                                                            {/* FIX 1: Trash button → opens custom delete modal */}
+                                                            <button
+                                                                type="button"
+                                                                disabled={deletingId === profile.id}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setConfirmDeleteId(profile.id);
+                                                                }}
+                                                                className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                title="Delete profile"
+                                                            >
+                                                                {deletingId === profile.id ? (
+                                                                    <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                                                                    </svg>
+                                                                ) : (
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                    </svg>
+                                                                )}
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <p className="text-xs text-gray-500">
-                                                        {formatDate(profile.created_at)}
-                                                    </p>
+                                                    <p className="text-xs text-gray-500">{formatDate(profile.created_at)}</p>
                                                 </div>
                                             ))
                                         )}
@@ -1061,26 +889,20 @@ export default function ArmCalibration({
                                 </div>
                             </div>
 
-                            {/* RIGHT PANEL: CALIBRATION CONTROLS */}
+                            {/* RIGHT PANEL: Calibration Controls */}
                             <div className="col-span-9">
                                 {!selectedProfile ? (
                                     <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-                                        <p className="text-gray-500">
-                                            Select a profile to begin calibration
-                                        </p>
+                                        <p className="text-gray-500">Select a profile to begin calibration</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
-                                        {/* CALIBRATION STATUS CARD */}
+                                        {/* Calibration Status Card */}
                                         <div className="bg-white rounded-lg border border-gray-200 p-6">
                                             <div className="flex items-center justify-between mb-4">
                                                 <div>
-                                                    <h3 className="text-lg font-semibold text-gray-900">
-                                                        Calibration Mode
-                                                    </h3>
-                                                    <p className="text-sm text-gray-500 mt-0.5">
-                                                        Profile: {selectedProfile.name}
-                                                    </p>
+                                                    <h3 className="text-lg font-semibold text-gray-900">Calibration Mode</h3>
+                                                    <p className="text-sm text-gray-500 mt-0.5">Profile: {selectedProfile.name}</p>
                                                 </div>
                                                 <label className="relative inline-flex items-center cursor-pointer">
                                                     <input
@@ -1090,53 +912,25 @@ export default function ArmCalibration({
                                                         disabled={loading}
                                                         className="sr-only peer"
                                                     />
-                                                    <div className="w-14 h-7 bg-gray-300 rounded-full peer peer-checked:bg-emerald-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-200 after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7"></div>
+                                                    <div className="w-14 h-7 bg-gray-300 rounded-full peer peer-checked:bg-emerald-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-200 after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-7" />
                                                 </label>
                                             </div>
-                                            <div
-                                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${
-                                                    calibrationActive
-                                                        ? "bg-emerald-50 text-emerald-700"
-                                                        : "bg-gray-100 text-gray-600"
-                                                }`}
-                                            >
-                                                <div
-                                                    className={`w-2 h-2 rounded-full ${
-                                                        calibrationActive ? "bg-emerald-500" : "bg-gray-400"
-                                                    }`}
-                                                ></div>
+                                            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${calibrationActive ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
+                                                <div className={`w-2 h-2 rounded-full ${calibrationActive ? "bg-emerald-500" : "bg-gray-400"}`} />
                                                 {calibrationActive ? "Active" : "Inactive"}
                                             </div>
-
-                                            {/* Loading indicator */}
                                             {loading && (
                                                 <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
-                                                    <svg
-                                                        className="animate-spin h-3 w-3"
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        fill="none"
-                                                        viewBox="0 0 24 24"
-                                                    >
-                                                        <circle
-                                                            className="opacity-25"
-                                                            cx="12"
-                                                            cy="12"
-                                                            r="10"
-                                                            stroke="currentColor"
-                                                            strokeWidth="4"
-                                                        />
-                                                        <path
-                                                            className="opacity-75"
-                                                            fill="currentColor"
-                                                            d="M4 12a8 8 0 018-8v8z"
-                                                        />
+                                                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                                                     </svg>
                                                     Syncing with server...
                                                 </div>
                                             )}
                                         </div>
 
-                                        {/* CAMERA FEED SECTION */}
+                                        {/* Camera Feed */}
                                         {(hands.left || hands.right) && (
                                             <div className="relative w-full h-96 bg-black rounded-lg overflow-hidden border-2 border-gray-300">
                                                 {activeHandCamera ? (
@@ -1144,40 +938,26 @@ export default function ArmCalibration({
                                                         src="http://192.168.1.140:5000/video"
                                                         alt="camera"
                                                         className="w-full h-full object-cover"
-                                                        style={{
-                                                            transform:
-                                                                activeHandCamera === "right"
-                                                                    ? "scaleX(-1)"
-                                                                    : "scaleX(1)",
-                                                        }}
+                                                        style={{ transform: activeHandCamera === "right" ? "scaleX(-1)" : "scaleX(1)" }}
                                                     />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center bg-gray-900">
-                                                        <p className="text-gray-400 text-xl">
-                                                            Enable Left or Right Hand
-                                                        </p>
+                                                        <p className="text-gray-400 text-xl">Enable Left or Right Hand</p>
                                                     </div>
                                                 )}
                                             </div>
                                         )}
 
-                                        {/* HANDS GRID */}
+                                        {/* Hands Grid */}
                                         {calibrationActive && (
                                             <div className="grid grid-cols-2 gap-6">
                                                 {HANDS.map((hand) => (
-                                                    <div
-                                                        key={hand}
-                                                        className="bg-white rounded-lg border border-gray-200 p-6"
-                                                    >
-                                                        {/* HAND HEADER */}
+                                                    <div key={hand} className="bg-white rounded-lg border border-gray-200 p-6">
+                                                        {/* Hand toggle button */}
                                                         <div className="mb-4">
                                                             <button
                                                                 type="button"
-                                                                disabled={
-                                                                    !calibrationActive ||
-                                                                    !handsReady ||
-                                                                    loading
-                                                                }
+                                                                disabled={!calibrationActive || !handsReady || loading}
                                                                 onClick={() => onHandToggle(hand)}
                                                                 className={`w-full px-4 py-3 rounded-lg font-medium transition-all ${
                                                                     hands[hand]
@@ -1187,41 +967,40 @@ export default function ArmCalibration({
                                                                           : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                                                                 }`}
                                                             >
-                                                                <span className="capitalize">
-                                                                    {hand} Hand
-                                                                </span>
+                                                                <span className="capitalize">{hand} Hand</span>
                                                                 {!handsReady && (
-                                                                    <span className="block text-xs mt-1 opacity-75">
-                                                                        Waiting for ready signal...
-                                                                    </span>
+                                                                    <span className="block text-xs mt-1 opacity-75">Waiting for ready signal...</span>
                                                                 )}
                                                             </button>
                                                         </div>
 
-                                                        {/* POINTS */}
+                                                        {/* Points */}
                                                         <div className="space-y-2 mb-4">
                                                             {POINTS.map((point) => {
-                                                                const isSelected =
-                                                                    selectedPoints[hand].has(point);
-                                                                const hasData =
-                                                                    pointData[hand][point] !== null;
+                                                                const isSelected = selectedPoints[hand].has(point);
+                                                                const hasData = pointData[hand][point] !== null;
+
+                                                                // FIX 3: checkbox is only interactive after WS unlocks it
+                                                                const isPointInteractive =
+                                                                    hands[hand] && pointsUnlocked[hand] && !loading;
 
                                                                 return (
                                                                     <div key={point} className="space-y-1">
                                                                         <button
                                                                             type="button"
-                                                                            disabled={
-                                                                                !hands[hand] || loading
-                                                                            }
-                                                                            onClick={() =>
-                                                                                onPointClick(hand, point)
+                                                                            disabled={!isPointInteractive}
+                                                                            onClick={() => onPointClick(hand, point)}
+                                                                            title={
+                                                                                hands[hand] && !pointsUnlocked[hand]
+                                                                                    ? "Waiting for robot data before points can be selected"
+                                                                                    : undefined
                                                                             }
                                                                             className={`w-full px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-all border flex items-center justify-between ${
                                                                                 isSelected
                                                                                     ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                                                                                    : hands[hand]
+                                                                                    : isPointInteractive
                                                                                       ? "border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700"
-                                                                                      : "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                                                                      : "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed opacity-60"
                                                                             }`}
                                                                         >
                                                                             <span className="flex items-center gap-2">
@@ -1229,43 +1008,34 @@ export default function ArmCalibration({
                                                                                     type="checkbox"
                                                                                     checked={isSelected}
                                                                                     onChange={() => {}}
-                                                                                    disabled={!hands[hand]}
+                                                                                    disabled={!isPointInteractive}
                                                                                     className="w-4 h-4 rounded pointer-events-none"
                                                                                 />
-                                                                                {point
-                                                                                    .replace(/_/g, " ")
-                                                                                    .replace(
-                                                                                        /\b\w/g,
-                                                                                        (l) => l.toUpperCase(),
-                                                                                    )}
+                                                                                {point.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
                                                                             </span>
-                                                                            {hasData && (
-                                                                                <span className="text-xs text-blue-600 font-medium">
-                                                                                    ✓ Data
-                                                                                </span>
-                                                                            )}
+                                                                            {/* Status badge — waiting vs data received */}
+                                                                            {hands[hand] && !pointsUnlocked[hand] ? (
+                                                                                <span className="text-xs text-amber-500 font-medium whitespace-nowrap">⏳ Waiting</span>
+                                                                            ) : hasData ? (
+                                                                                <span className="text-xs text-blue-600 font-medium">✓ Data</span>
+                                                                            ) : null}
                                                                         </button>
-                                                                        {hasData &&
-                                                                            pointData[hand][point] && (
-                                                                                <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs">
-                                                                                    <span className="text-blue-700 font-medium">
-                                                                                        Values:{" "}
-                                                                                    </span>
-                                                                                    <span className="text-blue-900 font-mono">
-                                                                                        [
-                                                                                        {pointData[hand][
-                                                                                            point
-                                                                                        ]!.join(", ")}
-                                                                                        ]
-                                                                                    </span>
-                                                                                </div>
-                                                                            )}
+
+                                                                        {/* Point data values — always visible when present, regardless of lock */}
+                                                                        {hasData && pointData[hand][point] && (
+                                                                            <div className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs">
+                                                                                <span className="text-blue-700 font-medium">Values: </span>
+                                                                                <span className="text-blue-900 font-mono">
+                                                                                    [{pointData[hand][point]!.join(", ")}]
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })}
                                                         </div>
 
-                                                        {/* ACTION BUTTONS */}
+                                                        {/* Action buttons */}
                                                         <div className="pt-4 border-t border-gray-200">
                                                             <p className="text-xs text-gray-500 mb-3">
                                                                 {selectedPoints[hand].size} point(s) selected
@@ -1274,11 +1044,7 @@ export default function ArmCalibration({
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => testPoints(hand)}
-                                                                    disabled={
-                                                                        !hands[hand] ||
-                                                                        loading ||
-                                                                        selectedPoints[hand].size === 0
-                                                                    }
+                                                                    disabled={!hands[hand] || loading || selectedPoints[hand].size === 0}
                                                                     className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                                                 >
                                                                     Test
@@ -1286,11 +1052,7 @@ export default function ArmCalibration({
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => retryPoints(hand)}
-                                                                    disabled={
-                                                                        !hands[hand] ||
-                                                                        loading ||
-                                                                        selectedPoints[hand].size === 0
-                                                                    }
+                                                                    disabled={!hands[hand] || loading || selectedPoints[hand].size === 0}
                                                                     className="px-3 py-2 bg-orange-600 text-white rounded-lg text-xs font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                                                 >
                                                                     Reset
@@ -1308,14 +1070,12 @@ export default function ArmCalibration({
                     </div>
                 </div>
 
-                {/* TEST COMPLETION MODAL */}
+                {/* Test Completion Modal */}
                 {showTestModal && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                         <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
                             <div className="text-center mb-6">
-                                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                                    Test Completed! 🎉
-                                </h3>
+                                <h3 className="text-xl font-bold text-gray-900 mb-2">Test Completed! 🎉</h3>
                                 <p className="text-gray-600 text-sm">
                                     The test has been completed successfully. What would you like to do next?
                                 </p>
@@ -1324,9 +1084,7 @@ export default function ArmCalibration({
                             <div className="space-y-4">
                                 {testCompletedHands.left && hands.left && (
                                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                        <h4 className="font-semibold text-gray-900 mb-3">
-                                            Left Hand
-                                        </h4>
+                                        <h4 className="font-semibold text-gray-900 mb-3">Left Hand</h4>
                                         <div className="grid grid-cols-2 gap-2">
                                             <button
                                                 onClick={() => handleTestModalRetry("left")}
@@ -1337,12 +1095,7 @@ export default function ArmCalibration({
                                             </button>
                                             <button
                                                 onClick={() => handleTestModalUpdate("left")}
-                                                disabled={
-                                                    loading ||
-                                                    Array.from(selectedPoints.left).some(
-                                                        (p) => !pointData.left[p],
-                                                    )
-                                                }
+                                                disabled={loading || Array.from(selectedPoints.left).some((p) => !pointData.left[p])}
                                                 className="px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                             >
                                                 Confirm
@@ -1353,9 +1106,7 @@ export default function ArmCalibration({
 
                                 {testCompletedHands.right && hands.right && (
                                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                        <h4 className="font-semibold text-gray-900 mb-3">
-                                            Right Hand
-                                        </h4>
+                                        <h4 className="font-semibold text-gray-900 mb-3">Right Hand</h4>
                                         <div className="grid grid-cols-2 gap-2">
                                             <button
                                                 onClick={() => handleTestModalRetry("right")}
@@ -1366,12 +1117,7 @@ export default function ArmCalibration({
                                             </button>
                                             <button
                                                 onClick={() => handleTestModalUpdate("right")}
-                                                disabled={
-                                                    loading ||
-                                                    Array.from(selectedPoints.right).some(
-                                                        (p) => !pointData.right[p],
-                                                    )
-                                                }
+                                                disabled={loading || Array.from(selectedPoints.right).some((p) => !pointData.right[p])}
                                                 className="px-4 py-2.5 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                             >
                                                 Confirm

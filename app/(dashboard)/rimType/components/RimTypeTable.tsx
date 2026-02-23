@@ -10,6 +10,8 @@ interface RimType {
     description: string | null;
     is_active: boolean;
     created_at: string;
+    category: any;
+    status: string;
 }
 
 interface RimTypeTableProps {
@@ -92,7 +94,7 @@ function RimTypeTable({ data, loading, onEdit }: RimTypeTableProps) {
                                 </td>
                             </tr>
                         ) : (
-                            data.map((item, index) => (
+                            data.map((item) => (
                                 <tr
                                     key={item.id}
                                     className="hover:bg-gray-50/30 transition-colors"
@@ -163,7 +165,7 @@ function RimTypeTable({ data, loading, onEdit }: RimTypeTableProps) {
                                                     />
                                                 </svg>
                                             </div>
-                                            <span className="text-sm text-gray-600">
+<span className="text-sm text-gray-600">
                                                 {formatDate(item.created_at)}
                                             </span>
                                         </div>

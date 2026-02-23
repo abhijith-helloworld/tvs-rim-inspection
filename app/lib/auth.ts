@@ -20,11 +20,17 @@ export interface UserData {
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 /* ===============================
-   TOKEN STORAGE (LOCAL + COOKIE)
+   TOKEN STORAGE (COOKIE PRIMARY + LOCALSTORAGE FALLBACK)
 ================================ */
 export const tokenStorage = {
   getAccessToken(): string | null {
     if (typeof window === "undefined") return null;
+
+    // ⭐ Cookie first (handles middleware mobile-auth flow),
+    // then localStorage (handles normal login flow)
+    const cookieToken = Cookies.get("access_token");
+    if (cookieToken) return cookieToken;
+
     return localStorage.getItem("accessToken");
   },
 
@@ -39,8 +45,12 @@ export const tokenStorage = {
     localStorage.setItem("accessToken", tokens.access);
     localStorage.setItem("refreshToken", tokens.refresh);
 
-    // ⭐ Middleware Support
-    Cookies.set("access_token", tokens.access);
+    // ⭐ Sync to cookie for middleware
+    Cookies.set("access_token", tokens.access, {
+      expires: 1,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
   },
 
   clearTokens(): void {
@@ -63,19 +73,76 @@ export const tokenStorage = {
 
     localStorage.setItem("userData", JSON.stringify(userData));
 
-    // ⭐ Role Cookie for Middleware
-    Cookies.set("role", userData.role);
+    // ⭐ Role cookie for middleware
+    Cookies.set("role", userData.role, {
+      expires: 1,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
   },
 
   getUserData(): UserData | null {
     if (typeof window === "undefined") return null;
+
+    // Try localStorage first
     const data = localStorage.getItem("userData");
-    return data ? JSON.parse(data) : null;
+    if (data) {
+      try {
+        return JSON.parse(data);
+      } catch {}
+    }
+
+    // ⭐ Fallback: reconstruct from cookies (mobile-auth flow)
+    const role = Cookies.get("role") as "USER" | "ADMIN" | undefined;
+    if (role) {
+      return { username: "", email: "", role };
+    }
+
+    return null;
   },
 
   getUserRole(): "USER" | "ADMIN" | null {
-    const userData = this.getUserData();
-    return userData?.role || null;
+    if (typeof window === "undefined") return null;
+
+    // Try localStorage userData first
+    const localData = localStorage.getItem("userData");
+    if (localData) {
+      try {
+        const parsed = JSON.parse(localData);
+        if (parsed?.role) return parsed.role;
+      } catch {}
+    }
+
+    // ⭐ Fallback: read role cookie (set by middleware)
+    const roleCookie = Cookies.get("role") as "USER" | "ADMIN" | undefined;
+    return roleCookie || null;
+  },
+
+  /**
+   * ⭐ Syncs cookie-based tokens into localStorage.
+   * Called automatically in your admin/userDashboard layout.
+   * No separate mobile-auth page needed.
+   */
+  syncFromCookies(): boolean {
+    if (typeof window === "undefined") return false;
+
+    const cookieToken = Cookies.get("access_token");
+    const cookieRole = Cookies.get("role") as "USER" | "ADMIN" | undefined;
+
+    if (!cookieToken) return false;
+
+    localStorage.setItem("accessToken", cookieToken);
+
+    if (cookieRole && !localStorage.getItem("userData")) {
+      const minimal: UserData = {
+        username: "",
+        email: "",
+        role: cookieRole,
+      };
+      localStorage.setItem("userData", JSON.stringify(minimal));
+    }
+
+    return true;
   },
 };
 
@@ -175,6 +242,26 @@ export const fetchWithAuth = async (
 };
 
 /* ===============================
+   VERIFY TOKEN (via API)
+================================ */
+export const verifyToken = async (token: string): Promise<boolean> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/accounts/token/verify/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+
+    if (!res.ok) return false;
+
+    const data = await res.json();
+    return data.status === true;
+  } catch {
+    return false;
+  }
+};
+
+/* ===============================
    LOGIN
 ================================ */
 export const login = async (
@@ -217,7 +304,7 @@ export const login = async (
       };
     }
 
-    // ⭐ Store tokens
+    // ⭐ Store tokens (writes both localStorage + cookie)
     tokenStorage.setTokens({
       access: data.access,
       refresh: data.refresh,
@@ -232,11 +319,8 @@ export const login = async (
 
     tokenStorage.setUserData(userData);
 
-    // ⭐ Role redirect
     const redirectTo =
-      userData.role === "ADMIN"
-        ? "/admin"
-        : "/userDashboard";
+      userData.role === "ADMIN" ? "/admin" : "/userDashboard";
 
     return {
       success: true,
@@ -263,11 +347,7 @@ export const register = async (
     const res = await fetch(`${API_BASE_URL}/accounts/register/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username,
-        email,
-        password,
-      }),
+      body: JSON.stringify({ username, email, password }),
     });
 
     const data = await res.json();

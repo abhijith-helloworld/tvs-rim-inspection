@@ -133,8 +133,8 @@ export default function RobotManagementPage() {
 
         const newStatus = !currentStatus;
 
-        setRobots((prev:any) =>
-            prev.map((r:any) =>
+        setRobots((prev: any) =>
+            prev.map((r: any) =>
                 r.id === id ? { ...r, is_active: newStatus } : r,
             ),
         );
@@ -160,9 +160,8 @@ export default function RobotManagementPage() {
                 `Robot ${currentStatus ? "deactivated" : "activated"} successfully`,
             );
         } catch (error) {
-
-            setRobots((prev:any) =>
-                prev.map((r:any) =>
+            setRobots((prev: any) =>
+                prev.map((r: any) =>
                     r.id === id ? { ...r, is_active: currentStatus } : r,
                 ),
             );
@@ -254,16 +253,18 @@ export default function RobotManagementPage() {
 
     /* ================= RENDER ================= */
     return (
-        <div className="min-h-screen p-6 bg-gray-50">
+        <div className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
             <Toaster position="top-right" theme="light" />
 
-            {/* HEADER */}
-            <div className="mb-8 flex justify-between items-center">
+            {/* HEADER – stacks on mobile, row on larger screens */}
+            <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">
+                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
                         Robot Fleet Management
                     </h1>
-                    <p className="text-gray-600">Monitor and manage robots</p>
+                    <p className="text-sm sm:text-base text-gray-600">
+                        Monitor and manage robots
+                    </p>
                 </div>
 
                 <div className="flex gap-3">
@@ -271,13 +272,14 @@ export default function RobotManagementPage() {
                         onClick={() =>
                             setModalState({ isOpen: true, robot: null })
                         }
-                        className="px-5 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors"
+                        className="w-full sm:w-auto px-4 sm:px-5 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors text-sm sm:text-base"
                     >
                         Add Robot
                     </button>
                 </div>
             </div>
 
+            {/* Stats Cards – responsive grid: 1 col on mobile, 2 on small, 4 on large */}
             {robots && <StatsCards robots={robots} />}
 
             {loading ? (
@@ -294,8 +296,9 @@ export default function RobotManagementPage() {
                 </div>
             ) : (
                 <>
-                    <div className="mb-6 flex justify-between items-center">
-                        <p className="text-sm text-gray-600">
+                    {/* Info bar – stacks on mobile */}
+                    <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                        <p className="text-xs sm:text-sm text-gray-600">
                             Showing {(currentPage - 1) * pageSize + 1} -{" "}
                             {Math.min(currentPage * pageSize, totalCount)} of{" "}
                             {totalCount} robots
@@ -307,13 +310,14 @@ export default function RobotManagementPage() {
                                     "Use toggle to activate/deactivate robots",
                                 )
                             }
-                            className="text-sm text-cyan-600 hover:text-cyan-700 font-medium"
+                            className="text-xs sm:text-sm text-cyan-600 hover:text-cyan-700 font-medium self-start sm:self-auto"
                         >
                             Help
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {/* Robot Cards Grid – already responsive */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                         {robots.map((robot) => (
                             <RobotCard
                                 key={robot.id}
@@ -333,24 +337,24 @@ export default function RobotManagementPage() {
                         ))}
                     </div>
 
-                    {/* PAGINATION */}
+                    {/* PAGINATION – wraps on mobile, hides some page numbers if needed */}
                     {totalPages > 1 && (
-                        <div className="mt-8 flex justify-between items-center">
-                            <p className="text-sm text-gray-600">
+                        <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                            <p className="text-xs sm:text-sm text-gray-600 order-2 sm:order-1">
                                 Showing {(currentPage - 1) * pageSize + 1} to{" "}
                                 {Math.min(currentPage * pageSize, totalCount)}{" "}
                                 of {totalCount} robots
                             </p>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-center sm:justify-end gap-2 order-1 sm:order-2">
                                 <button
                                     onClick={handlePreviousPage}
                                     disabled={!previousPage}
-                                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     aria-label="Previous page"
                                 >
                                     <svg
-                                        className="w-5 h-5"
+                                        className="w-4 h-4 sm:w-5 sm:h-5"
                                         fill="none"
                                         stroke="currentColor"
                                         viewBox="0 0 24 24"
@@ -364,12 +368,13 @@ export default function RobotManagementPage() {
                                     </svg>
                                 </button>
 
-                                <div className="flex gap-2">
+                                {/* Page numbers – hide on smallest, show limited on mobile */}
+                                <div className="hidden xs:flex gap-1 sm:gap-2">
                                     {getPageNumbers().map((page, index) =>
                                         page === "..." ? (
                                             <span
                                                 key={`ellipsis-${index}`}
-                                                className="w-10 h-10 flex items-center justify-center text-gray-500"
+                                                className="w-7 h-7 sm:w-9 sm:h-10 flex items-center justify-center text-gray-500 text-sm sm:text-base"
                                             >
                                                 ...
                                             </span>
@@ -381,7 +386,7 @@ export default function RobotManagementPage() {
                                                         page as number,
                                                     )
                                                 }
-                                                className={`w-10 h-10 flex items-center justify-center rounded-lg font-medium transition-colors ${
+                                                className={`w-7 h-7 sm:w-9 sm:h-10 flex items-center justify-center rounded-lg font-medium transition-colors text-sm sm:text-base ${
                                                     currentPage === page
                                                         ? "bg-teal-500 text-white shadow-sm"
                                                         : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
@@ -393,14 +398,19 @@ export default function RobotManagementPage() {
                                     )}
                                 </div>
 
+                                {/* Simple mobile indicator (optional) – you could add a small text showing current page */}
+                                <span className="xs:hidden text-sm text-gray-700">
+                                    {currentPage} / {totalPages}
+                                </span>
+
                                 <button
                                     onClick={handleNextPage}
                                     disabled={!nextPage}
-                                    className="w-10 h-10 flex items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     aria-label="Next page"
                                 >
                                     <svg
-                                        className="w-5 h-5"
+                                        className="w-4 h-4 sm:w-5 sm:h-5"
                                         fill="none"
                                         stroke="currentColor"
                                         viewBox="0 0 24 24"
@@ -419,6 +429,7 @@ export default function RobotManagementPage() {
                 </>
             )}
 
+            {/* Modals – ensure they are responsive; you may add full-screen on mobile if needed */}
             <RobotModal
                 isOpen={modalState.isOpen}
                 robot={modalState.robot}
