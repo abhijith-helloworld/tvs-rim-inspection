@@ -3,27 +3,24 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import SchedulesList from "./[id]/page";
 import CreateSchedule from "./Shedulecreat";
-// import SchedulesList from "./[id]/_components/schedule-list";
 import { tokenStorage, API_BASE_URL, fetchWithAuth } from "../lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import RobotDashboardHeader from "../Includes/header";
 
 /* ================================================================
-   TYPES — must exactly match RobotDashboardHeader props
-   (same as dashboard.tsx — ideally import from @/app/types/robot)
+   TYPES
    ================================================================ */
 
 interface RobotData {
-    id: string;       // BUG 5 FIX: was missing, header requires it
+    id: string;
     name: string;
-    status: string;   // BUG 5 FIX: was missing, header requires it
+    status: string;
     robo_id?: string;
     minimum_battery_charge?: number;
     [key: string]: unknown;
 }
 
-// BUG 3 FIX: battery must be a BatteryStatus object, never number | null
 interface BatteryStatus {
     level: number;
     status: "charging" | "discharging" | "full" | "low";
@@ -34,21 +31,19 @@ interface BatteryStatus {
     dod?: number;
 }
 
-// BUG 4 FIX: robotStatus must be an object, never a plain string
 interface RobotStatus {
     break_status: boolean;
     emergency_status: boolean;
     Arm_moving: boolean;
 }
 
-interface StatusTotals {
-    pending: number;
+interface ScheduleSummary {
+    total: number;
+    scheduled: number;
     processing: number;
     completed: number;
-    total: number;
 }
 
-// BUG 1 FIX: filter data is passed from dashboard via URL — define the type
 interface FilterData {
     filter_type: "day" | "week" | "month" | "range";
     date: string;
@@ -56,7 +51,29 @@ interface FilterData {
     end_date: string;
 }
 
-/* ── Defaults (so header never receives null/undefined) ─────────────── */
+// Shared types — exported so list page can import them
+export interface Schedule {
+    id: number;
+    location: string;
+    scheduled_date: string;
+    scheduled_time: string;
+    end_time: string;
+    is_canceled: boolean;
+    status: "scheduled" | "processing" | "completed";
+    created_at: string;
+    robot: number;
+}
+
+export interface Pagination {
+    current_page: number;
+    total_pages: number;
+    total_records: number;
+    page_size: number;
+    has_next: boolean;
+    has_previous: boolean;
+}
+
+/* ── Defaults ─────────────────────────────────────────────────── */
 const DEFAULT_BATTERY: BatteryStatus = {
     level: 0,
     status: "discharging",
@@ -69,166 +86,186 @@ const DEFAULT_ROBOT_STATUS: RobotStatus = {
     Arm_moving: false,
 };
 
+const DEFAULT_PAGINATION: Pagination = {
+    current_page: 1,
+    total_pages: 1,
+    total_records: 0,
+    page_size: 8,
+    has_next: false,
+    has_previous: false,
+};
+
+/* ── Filter body builder ──────────────────────────────────────── */
+function buildFilterBody(
+    filterData: FilterData,
+    statusFilter: string[]
+): Record<string, string | string[] | undefined> {
+    return {
+        filter_type: filterData.filter_type,
+        date:        filterData.date       || undefined,
+        start_date:  filterData.start_date || undefined,
+        end_date:    filterData.end_date   || undefined,
+        ...(statusFilter.length > 0 ? { status: statusFilter } : {}),
+    };
+}
+
 /* ================================================================
    COMPONENT
    ================================================================ */
 
 function DashboardContent() {
-    const router = useRouter();
+    const router      = useRouter();
     const searchParams = useSearchParams();
 
-    /* ── Robot ID from URL ─────────────────────────────────────────── */
-    const [robotId, setRobotId] = useState<string>("");
+    /* ── URL / init state ───────────────────────────────────────── */
+    const [robotId,       setRobotId]       = useState<string>("");
     const [isInitialized, setIsInitialized] = useState(false);
-
-    // BUG 1+2 FIX: read ALL filter params the dashboard passes in the URL
-    const [filterData, setFilterData] = useState<FilterData>({
+    const [filterData,    setFilterData]    = useState<FilterData>({
         filter_type: "month",
-        date: "",
-        start_date: "",
-        end_date: "",
+        date:        "",
+        start_date:  "",
+        end_date:    "",
     });
 
-    /* ── Robot state ───────────────────────────────────────────────── */
-    const [robotData, setRobotData] = useState<RobotData | null>(null);
-    const [roboId, setRoboId] = useState<string>("");
+    /* ── Robot state ────────────────────────────────────────────── */
+    const [robotData,    setRobotData]   = useState<RobotData | null>(null);
+    const [roboId,       setRoboId]      = useState<string>("");
+    const [battery,      setBattery]     = useState<BatteryStatus>(DEFAULT_BATTERY);
+    const [robotStatus,  setRobotStatus] = useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
+    const [wsConnected,  setWsConnected] = useState<boolean>(false);
 
-    // BUG 3 FIX: battery is always a BatteryStatus object
-    const [battery, setBattery] = useState<BatteryStatus>(DEFAULT_BATTERY);
-
-    // BUG 4 FIX: robotStatus is always a RobotStatus object
-    const [robotStatus, setRobotStatus] =
-        useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
-
-    const [wsConnected, setWsConnected] = useState<boolean>(false);
-
-    /* ── Schedule totals ───────────────────────────────────────────── */
-    const [statusTotals, setStatusTotals] = useState<StatusTotals>({
-        pending: 0,
-        processing: 0,
-        completed: 0,
-        total: 0,
+    /* ── Schedule state (owned here, passed to list) ────────────── */
+    const [schedules,       setSchedules]       = useState<Schedule[]>([]);
+    const [pagination,      setPagination]      = useState<Pagination>(DEFAULT_PAGINATION);
+    const [scheduleSummary, setScheduleSummary] = useState<ScheduleSummary>({
+        total: 0, scheduled: 0, processing: 0, completed: 0,
     });
-    const [loading, setLoading] = useState(true);
+    const [statusFilter,    setStatusFilter]    = useState<string[]>([]);
+    const [currentPage,     setCurrentPage]     = useState(1);
+    const PAGE_SIZE = 8;
 
-    /* ── Clock ─────────────────────────────────────────────────────── */
+    /* ── Loading / error ────────────────────────────────────────── */
+    const [schedulesLoading, setSchedulesLoading] = useState(false);
+    const [schedulesError,   setSchedulesError]   = useState<string | null>(null);
+
+    /* ── Clock ──────────────────────────────────────────────────── */
     const [time, setTime] = useState<string>(new Date().toLocaleTimeString());
 
-    // BUG 6 FIX: WebSocket ref for live battery + status updates
-    const wsRef = useRef<WebSocket | null>(null);
+    const wsRef            = useRef<WebSocket | null>(null);
+    const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    /* ── Clock tick ────────────────────────────────────────────────── */
+    /* ── Clock tick ─────────────────────────────────────────────── */
     useEffect(() => {
-        const interval = setInterval(() => {
-            setTime(new Date().toLocaleTimeString());
-        }, 1000);
+        const interval = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
         return () => clearInterval(interval);
     }, []);
 
-    /* ── INITIALIZE: read robot_id + all filter params from URL ─────── */
-    // BUG 1+2 FIX: previously only robot_id was read; filter params were dropped
+    /* ── Read URL params ────────────────────────────────────────── */
     useEffect(() => {
         const robotIdParam = searchParams.get("robot_id");
         setRobotId(robotIdParam ?? "");
-
         setFilterData({
-            filter_type:
-                (searchParams.get("filter_type") as FilterData["filter_type"]) ??
-                "month",
-            date:       searchParams.get("date")       ?? "",
-            start_date: searchParams.get("start_date") ?? "",
-            end_date:   searchParams.get("end_date")   ?? "",
+            filter_type: (searchParams.get("filter_type") as FilterData["filter_type"]) ?? "month",
+            date:        searchParams.get("date")       ?? "",
+            start_date:  searchParams.get("start_date") ?? "",
+            end_date:    searchParams.get("end_date")   ?? "",
         });
-
         setIsInitialized(true);
     }, [searchParams]);
 
-    /* ── AUTH CHECK ────────────────────────────────────────────────── */
+    /* ── Auth check ─────────────────────────────────────────────── */
     useEffect(() => {
-        if (!tokenStorage.isAuthenticated()) {
-            router.replace("/login");
-        }
+        if (!tokenStorage.isAuthenticated()) router.replace("/login");
     }, [router]);
 
-    /* ── FETCH ROBOT DATA ──────────────────────────────────────────── */
-    // BUG 5 FIX: fetch full robot object so we have id + status for header
+    /* ── Fetch robot data ───────────────────────────────────────── */
     useEffect(() => {
         if (!robotId || !isInitialized) return;
-
         const fetchRobotData = async () => {
             try {
-                const response = await fetchWithAuth(
-                    `${API_BASE_URL}/robots/${robotId}/`,
-                );
+                const response = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/`);
                 if (!response.ok) throw new Error("Failed to fetch robot data");
-
                 const json = await response.json();
                 if (json.success && json.data) {
                     const robot: RobotData = json.data;
                     setRobotData(robot);
-
-                    // Seed battery from REST response if available
-                    // (WebSocket will override with live values)
                     if (typeof robot.battery_level === "number") {
-                        setBattery((prev) => ({
-                            ...prev,
-                            level: robot.battery_level as number,
-                        }));
+                        setBattery((prev) => ({ ...prev, level: robot.battery_level as number }));
                     }
-
-                    // Save robo_id for WebSocket connection
-                    if (robot.robo_id) {
-                        setRoboId(robot.robo_id as string);
-                    }
+                    if (robot.robo_id) setRoboId(robot.robo_id as string);
                 }
             } catch (error) {
                 console.error("Error fetching robot data:", error);
             }
         };
-
         fetchRobotData();
     }, [robotId, isInitialized]);
 
-    /* ── FETCH SCHEDULE STATUS TOTALS ──────────────────────────────── */
+    /* ── Fetch schedules + summary from filter API ──────────────── */
+    const fetchSchedules = useCallback(async () => {
+        if (!robotId || isNaN(Number(robotId))) return;
+        setSchedulesLoading(true);
+        setSchedulesError(null);
+        try {
+            const body = buildFilterBody(filterData, statusFilter);
+            const url  = `${API_BASE_URL}/schedule/robot/${robotId}/filter/?page=${currentPage}&page_size=${PAGE_SIZE}`;
+
+            const response = await fetchWithAuth(url, {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify(body),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText || "Unknown error"}`);
+            }
+
+            const result = await response.json();
+            if (!result.success) throw new Error(result.message || "Failed to fetch schedules");
+
+            // Sort schedules newest first
+            const sorted = [...(result.schedules || [])].sort((a, b) => {
+                const dateA = new Date(`${a.scheduled_date}T${a.scheduled_time}`).getTime();
+                const dateB = new Date(`${b.scheduled_date}T${b.scheduled_time}`).getTime();
+                return dateB - dateA;
+            });
+
+            setSchedules(sorted);
+
+            // Pagination
+            if (result.pagination) setPagination(result.pagination);
+
+            // ── Schedule summary from filter response (replaces old /schedules/ API) ──
+            if (result.schedule_summary) {
+                setScheduleSummary(result.schedule_summary);
+            }
+
+        } catch (err: any) {
+            setSchedulesError(err.message || "Failed to load schedules");
+            setSchedules([]);
+        } finally {
+            setSchedulesLoading(false);
+        }
+    }, [robotId, filterData, statusFilter, currentPage]);
+
+    /* ── Trigger fetch on dependency change ─────────────────────── */
     useEffect(() => {
         if (!robotId || !isInitialized) return;
+        fetchSchedules();
+    }, [robotId, isInitialized, fetchSchedules]);
 
-        const fetchStatusTotals = async () => {
-            try {
-                setLoading(true);
-                const response = await fetchWithAuth(
-                    `${API_BASE_URL}/robots/${robotId}/schedules/`,
-                );
-                if (!response.ok) throw new Error("Failed to fetch schedules");
-                const data = await response.json();
-                if (data.success && data.data.status_totals) {
-                    setStatusTotals(data.data.status_totals);
-                }
-            } catch (error) {
-                console.error("Error fetching status totals:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchStatusTotals();
-    }, [robotId, isInitialized]);
-
-    /* ── WEBSOCKET — live battery + robot status ───────────────────── */
-    // BUG 6 FIX: schedule page had no WebSocket at all, so battery/robotStatus
-    // were stuck at their initial values and the header showed stale data.
+    /* ── WebSocket — battery + robot status ─────────────────────── */
     useEffect(() => {
         if (!roboId) return;
 
-        let isManualClose = false;
+        let isManualClose   = false;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
         let ws: WebSocket | null = null;
 
         const connect = () => {
             try {
-                ws = new WebSocket(
-                    `ws://192.168.0.152:8002/ws/robot_message/${roboId}/`,
-                );
+                ws = new WebSocket(`ws://192.168.0.152:8002/ws/robot_message/${roboId}/`);
                 wsRef.current = ws;
 
                 ws.onopen = () => setWsConnected(true);
@@ -237,47 +274,40 @@ function DashboardContent() {
                     try {
                         const payload = JSON.parse(event.data as string);
 
-                        /* battery_information → BatteryStatus object */
                         if (payload.event === "battery_information") {
                             const soc     = Number(payload.data?.soc)     || 0;
                             const current = Number(payload.data?.current) || 0;
                             const voltage = Number(payload.data?.voltage) || 0;
                             const power   = Number(payload.data?.power)   || 0;
                             const dod     = Number(payload.data?.dod)     || 0;
-
                             const status: BatteryStatus["status"] =
                                 current > 0.5 ? "charging"
                                 : soc >= 99   ? "full"
                                 : soc < 20    ? "low"
                                 :               "discharging";
-
-                            const hours   = Math.floor(soc / 20);
-                            const minutes = Math.floor((soc % 20) * 3);
-
                             setBattery({
                                 level: soc,
                                 status,
-                                timeRemaining: `${hours}h ${minutes}m`,
-                                voltage,
-                                current,
-                                power,
-                                dod,
+                                timeRemaining: `${Math.floor(soc / 20)}h ${Math.floor((soc % 20) * 3)}m`,
+                                voltage, current, power, dod,
                             });
                         }
 
-                        /* robot_status → RobotStatus object */
                         if (payload.event === "robot_status") {
                             setRobotStatus((prev) => ({
-                                break_status:
-                                    payload.data.break_status ??
-                                    prev.break_status,
-                                emergency_status:
-                                    payload.data.emergency_status ??
-                                    prev.emergency_status,
-                                Arm_moving:
-                                    payload.data.Arm_moving ??
-                                    prev.Arm_moving,
+                                break_status:     payload.data.break_status     ?? prev.break_status,
+                                emergency_status: payload.data.emergency_status ?? prev.emergency_status,
+                                Arm_moving:       payload.data.Arm_moving       ?? prev.Arm_moving,
                             }));
+                        }
+
+                        // Refresh schedule list on WS schedule events
+                        if (
+                            payload.event === "schedule_updated" ||
+                            payload.event === "schedule_created"
+                        ) {
+                            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+                            refreshTimeoutRef.current = setTimeout(() => fetchSchedules(), 1000);
                         }
                     } catch (err) {
                         console.error("❌ WS message parse error:", err);
@@ -289,13 +319,11 @@ function DashboardContent() {
                 ws.onclose = () => {
                     setWsConnected(false);
                     wsRef.current = null;
-                    if (!isManualClose)
-                        reconnectTimeout = setTimeout(connect, 3000);
+                    if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
                 };
             } catch (err) {
                 console.error("❌ WS init failed:", err);
-                if (!isManualClose)
-                    reconnectTimeout = setTimeout(connect, 3000);
+                if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
             }
         };
 
@@ -303,12 +331,26 @@ function DashboardContent() {
         return () => {
             isManualClose = true;
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
             ws?.close();
             wsRef.current = null;
         };
-    }, [roboId]);
+    }, [roboId, fetchSchedules]);
 
-    /* ── LOADING GUARD ─────────────────────────────────────────────── */
+    /* ── Handlers passed down to list page ──────────────────────── */
+    const handleStatusFilterChange = useCallback((val: string[]) => {
+        setStatusFilter(val);
+        setCurrentPage(1);
+    }, []);
+
+    const handlePageChange = useCallback((page: number) => {
+        if (page >= 1 && page <= pagination.total_pages) {
+            setCurrentPage(page);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+    }, [pagination.total_pages]);
+
+    /* ── Loading guard ──────────────────────────────────────────── */
     if (!isInitialized || !robotId) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50/30 flex items-center justify-center">
@@ -320,7 +362,7 @@ function DashboardContent() {
         );
     }
 
-    /* ── RENDER ────────────────────────────────────────────────────── */
+    /* ── Render ─────────────────────────────────────────────────── */
     return (
         <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50/30 p-6">
 
@@ -334,71 +376,66 @@ function DashboardContent() {
                 time={time}
             />
 
-            {/* Main Content */}
             <div>
-                {/* Stats Grid */}
+                {/* ── Stats Grid — sourced from schedule_summary in filter response ── */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
+
                     <div className="bg-blue-50 rounded-2xl border border-blue-100 p-6 transition-all duration-200 hover:shadow-lg shadow-sm backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {loading ? "..." : statusTotals.total}
+                                {schedulesLoading ? "..." : scheduleSummary.total}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">
-                                Total Schedule
-                            </p>
+                            <p className="text-sm text-gray-600 font-medium">Total Schedule</p>
                         </div>
                     </div>
 
                     <div className="bg-green-50 rounded-2xl shadow-sm border border-green-100 p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {loading ? "..." : statusTotals.completed}
+                                {schedulesLoading ? "..." : scheduleSummary.completed}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">
-                                Completed
-                            </p>
+                            <p className="text-sm text-gray-600 font-medium">Completed</p>
                         </div>
                     </div>
 
+                    {/* "scheduled" from API = not yet started = displayed as "Pending" */}
                     <div className="bg-amber-50 rounded-2xl shadow-sm border border-amber-100 p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {loading ? "..." : statusTotals.pending}
+                                {schedulesLoading ? "..." : scheduleSummary.scheduled}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">
-                                Pending
-                            </p>
+                            <p className="text-sm text-gray-600 font-medium">Pending</p>
                         </div>
                     </div>
 
                     <div className="bg-blue-50 rounded-2xl shadow-sm border border-gray-200/50 p-6 transition-all duration-200 hover:shadow-lg hover:border-gray-300 backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {loading ? "..." : statusTotals.processing}
+                                {schedulesLoading ? "..." : scheduleSummary.processing}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">
-                                Processing
-                            </p>
+                            <p className="text-sm text-gray-600 font-medium">Processing</p>
                         </div>
                     </div>
                 </div>
-                {/* Schedule Section */}
+
+                {/* ── Schedule Section ── */}
                 <div className="flex flex-col lg:flex-row gap-6">
                     <div className="flex-1">
                         <div className="rounded-2xl border border-gray-200/50 bg-white shadow-lg overflow-hidden backdrop-blur-sm">
-                            {robotId && isInitialized ? (
-                                <SchedulesList
-                                    robotId={robotId}
-                                    filterData={filterData}
-                                />
-                            ) : (
-                                <div className="flex items-center justify-center p-12">
-                                    <Loader2 className="w-8 h-8 animate-spin text-teal-600 mr-3" />
-                                    <p className="text-gray-400">
-                                        Loading robot data...
-                                    </p>
-                                </div>
-                            )}
+                            <SchedulesList
+                                robotId={robotId}
+                                robotData={robotData}
+                                filterData={filterData}
+                                schedules={schedules}
+                                pagination={pagination}
+                                loading={schedulesLoading}
+                                error={schedulesError}
+                                statusFilter={statusFilter}
+                                currentPage={currentPage}
+                                onStatusFilterChange={handleStatusFilterChange}
+                                onPageChange={handlePageChange}
+                                onRefresh={fetchSchedules}
+                            />
                         </div>
                     </div>
 

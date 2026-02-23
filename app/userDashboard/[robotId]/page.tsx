@@ -1630,13 +1630,13 @@ const Dashboard: React.FC = () => {
                                             <div
                                                 className={`w-2 h-2 rounded-full ${cam.connected ? "bg-emerald-500" : "bg-red-500"}`}
                                             />
-                                            <span
+                                            {/* <span
                                                 className={`text-xs font-medium ${cam.connected ? "text-emerald-600" : "text-red-600"}`}
                                             >
                                                 {cam.connected
                                                     ? "Connected"
                                                     : "Disconnected"}
-                                            </span>
+                                            </span> */}
                                         </div>
                                         <div className="mt-2 space-y-1">
                                             {[

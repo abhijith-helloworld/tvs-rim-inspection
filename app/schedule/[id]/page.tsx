@@ -1,49 +1,28 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { fetchWithAuth, API_BASE_URL } from "../../lib/auth";
 import {
     Calendar, ChevronRight, Loader2, XCircle,
     ChevronLeft, Search, BarChart3, AlertCircle,
     ChevronDown, Check, X,
 } from "lucide-react";
 import { ScheduleCard } from "./_components/schedule-card";
-import { RobotWebSocketManager } from "../../lib/websocket-utils";
+import type { Schedule, Pagination } from "../page";
 
 /* ===================== TYPES ===================== */
-interface Schedule {
-    id: number;
-    location: string;
-    scheduled_date: string;
-    scheduled_time: string;
-    end_time: string;
-    is_canceled: boolean;
-    status: "scheduled" | "processing" | "completed";
-    created_at: string;
-    robot: number;
-}
-
 interface RobotData {
-    id: number;
+    id: number | string;
     robo_id: string;
     name: string;
-    robot_type: string;
-    model_number: string | null;
-    local_ip: string | null;
+    robot_type?: string;
+    model_number?: string | null;
+    local_ip?: string | null;
     status: string;
-    inspection_status: string;
-    schedule_summary: { total: number; scheduled: number; processing: number; completed: number };
-    inspection_summary: { total: number; defected: number; non_defected: number };
-}
-
-interface Pagination {
-    current_page: number;
-    total_pages: number;
-    total_records: number;
-    page_size: number;
-    has_next: boolean;
-    has_previous: boolean;
+    inspection_status?: string;
+    schedule_summary?: { total: number; scheduled: number; processing: number; completed: number };
+    inspection_summary?: { total: number; defected: number; non_defected: number };
+    [key: string]: unknown;
 }
 
 interface FilterData {
@@ -53,39 +32,31 @@ interface FilterData {
     end_date?: string;
 }
 
-interface ScheduleListPageProps {
+export interface ScheduleListPageProps {
     robotId: string | number;
+    robotData: RobotData | null;
     filterData?: FilterData;
-}
-
-/* ===================== HELPERS ===================== */
-function buildFilterBody(
-    filterData?: FilterData,
-    statusFilter?: string[]
-): Record<string, string | string[] | undefined> {
-    const base = filterData
-        ? {
-              filter_type: filterData.filter_type,
-              date:        filterData.date       || undefined,
-              start_date:  filterData.start_date || undefined,
-              end_date:    filterData.end_date   || undefined,
-          }
-        : { filter_type: "month", date: new Date().toISOString().split("T")[0] };
-
-    return {
-        ...base,
-        ...(statusFilter && statusFilter.length > 0 ? { status: statusFilter } : {}),
-    };
+    // Data owned by parent
+    schedules: Schedule[];
+    pagination: Pagination;
+    loading: boolean;
+    error: string | null;
+    statusFilter: string[];
+    currentPage: number;
+    // Callbacks
+    onStatusFilterChange: (val: string[]) => void;
+    onPageChange: (page: number) => void;
+    onRefresh: () => void;
 }
 
 /* ===================== STATUS CONFIG ===================== */
 const STATUS_OPTIONS = [
-    { value: "scheduled",  label: "Scheduled" },
+    { value: "scheduled",  label: "Scheduled"  },
     { value: "processing", label: "Processing" },
-    { value: "completed",  label: "Completed",}
+    { value: "completed",  label: "Completed"  },
 ];
 
-/* ===================== STATUS DROPDOWN COMPONENT ===================== */
+/* ===================== STATUS DROPDOWN ===================== */
 interface StatusDropdownProps {
     value: string[];
     onChange: (val: string[]) => void;
@@ -104,20 +75,18 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
-    const toggle = (val: string) => {
+    const toggle = (val: string) =>
         onChange(value.includes(val) ? value.filter((v) => v !== val) : [...value, val]);
-    };
 
     const clearAll = () => onChange([]);
 
     return (
         <div ref={ref} className="relative min-w-[200px]">
-            {/* Trigger Button */}
+            {/* Trigger */}
             <button
                 onClick={() => setOpen((p) => !p)}
                 className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border border-gray-200/50 bg-white/50 hover:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all text-sm"
             >
-                {/* Selected tags or placeholder */}
                 <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0">
                     {value.length === 0 ? (
                         <span className="text-gray-400">All Status</span>
@@ -129,7 +98,6 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
                                     key={v}
                                     className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-gray-100 text-xs font-medium text-gray-700"
                                 >
-                                    {/* <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${opt?.dot}`} /> */}
                                     {opt?.label}
                                     <span
                                         role="button"
@@ -150,10 +118,10 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
                 />
             </button>
 
-            {/* Dropdown Panel */}
+            {/* Dropdown panel */}
             {open && (
                 <div className="absolute z-50 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
-                    {/* Panel Header */}
+                    {/* Header */}
                     <div className="flex items-center p-2 justify-between border-gray-100 bg-gray-50">
                         {value.length > 0 && (
                             <button
@@ -165,7 +133,7 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
                         )}
                     </div>
 
-                    {/* Option List */}
+                    {/* Options */}
                     <ul className="py-1">
                         {STATUS_OPTIONS.map((opt) => {
                             const isSelected = value.includes(opt.value);
@@ -180,7 +148,6 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
                                         }`}
                                     >
                                         <div className="flex items-center gap-2.5">
-                                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${opt}`} />
                                             <span className="font-medium">{opt.label}</span>
                                         </div>
                                         <div
@@ -190,7 +157,9 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
                                                     : "border-gray-300 bg-white"
                                             }`}
                                         >
-                                            {isSelected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+                                            {isSelected && (
+                                                <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                                            )}
                                         </div>
                                     </button>
                                 </li>
@@ -198,7 +167,7 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
                         })}
                     </ul>
 
-                    {/* Panel Footer */}
+                    {/* Footer */}
                     <div className="px-3 py-2 border-t border-gray-100 bg-gray-50">
                         <button
                             onClick={() => setOpen(false)}
@@ -214,153 +183,27 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
 }
 
 /* ===================== MAIN COMPONENT ===================== */
-function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPageProps) {
-    const router = useRouter();
-    const robotDbId = robotIdProp ? String(robotIdProp).trim() : null;
+function ScheduleListPage({
+    robotId: robotIdProp,
+    robotData,
+    filterData,
+    schedules,
+    pagination,
+    loading,
+    error,
+    statusFilter,
+    currentPage,
+    onStatusFilterChange,
+    onPageChange,
+    onRefresh,
+}: ScheduleListPageProps) {
+    const router     = useRouter();
+    const robotDbId  = robotIdProp ? String(robotIdProp).trim() : null;
 
-    const [schedules,     setSchedules]     = useState<Schedule[]>([]);
-    const [robotData,     setRobotData]     = useState<RobotData | null>(null);
-    const [roboId,        setRoboId]        = useState<string | null>(null);
-    const [loading,       setLoading]       = useState(true);
-    const [error,         setError]         = useState<string | null>(null);
-    const [searchQuery,   setSearchQuery]   = useState("");
-    const [statusFilter,  setStatusFilter]  = useState<string[]>([]);
-    const [currentPage,   setCurrentPage]   = useState(1);
-    const [pageSize]                        = useState(8);
-    const [isRefreshing,  setIsRefreshing]  = useState(false);
-    const [wsConnected,   setWsConnected]   = useState(false);
-    const [wsError,       setWsError]       = useState<string | null>(null);
+    // Local search — client-side only, no API call needed
+    const [searchQuery, setSearchQuery] = useState("");
 
-    const wsManagerRef      = useRef<RobotWebSocketManager | null>(null);
-    const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    const [pagination, setPagination] = useState<Pagination>({
-        current_page: 1, total_pages: 1, total_records: 0,
-        page_size: 8, has_next: false, has_previous: false,
-    });
-
-    /* ── Validate ID ── */
-    useEffect(() => {
-        if (!robotDbId || isNaN(Number(robotDbId))) {
-            setError(`Invalid robot ID: ${robotDbId === null ? "null" : robotDbId === "" ? "empty" : robotDbId}`);
-            setLoading(false);
-        }
-    }, [robotDbId]);
-
-    /* ── Fetch robot ── */
-    useEffect(() => {
-        if (!robotDbId || isNaN(Number(robotDbId))) return;
-        const fetchRobotAndSetup = async () => {
-            try {
-                setLoading(true);
-                const response = await fetchWithAuth(`${API_BASE_URL}/robots/${robotDbId}/`);
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const result = await response.json();
-                if (!result.success) throw new Error(result.message || "Failed to fetch robot");
-                const robot = result.data as RobotData;
-                setRobotData(robot);
-                setRoboId(robot.robo_id);
-                setError(null);
-            } catch (err: any) {
-                setError(err.message || "Failed to load robot data");
-                setRobotData(null);
-                setRoboId(null);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchRobotAndSetup();
-    }, [robotDbId]);
-
-    /* ── Fetch schedules ── */
-    const fetchFilteredData = React.useCallback(async () => {
-        if (!robotDbId || isNaN(Number(robotDbId))) return;
-        setIsRefreshing(true);
-        setError(null);
-        try {
-            const filterBody = buildFilterBody(filterData, statusFilter);
-            const url = `${API_BASE_URL}/schedule/robot/${robotDbId}/filter/?page=${currentPage}&page_size=${pageSize}`;
-            const response = await fetchWithAuth(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(filterBody),
-            });
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP ${response.status}: ${errorText || "Unknown error"}`);
-            }
-            const result = await response.json();
-            if (!result.success) throw new Error(result.message || "Failed to fetch schedules");
-
-            const sortedSchedules = [...(result.schedules || [])].sort((a, b) => {
-                const dateA = new Date(`${a.scheduled_date}T${a.scheduled_time}`).getTime();
-                const dateB = new Date(`${b.scheduled_date}T${b.scheduled_time}`).getTime();
-                return dateB - dateA;
-            });
-
-            setSchedules(sortedSchedules);
-            if (result.pagination) setPagination(result.pagination);
-            setError(null);
-        } catch (err: any) {
-            setError(err.message || "Failed to load schedules");
-            setSchedules([]);
-        } finally {
-            setLoading(false);
-            setIsRefreshing(false);
-        }
-    }, [robotDbId, currentPage, pageSize, filterData, statusFilter]);
-
-    /* ── Initial + re-fetch on filter/page change ── */
-    useEffect(() => {
-        if (!robotDbId || isNaN(Number(robotDbId))) return;
-        setLoading(true);
-        fetchFilteredData();
-    }, [robotDbId, fetchFilteredData]);
-
-    /* ── WebSocket ── */
-    useEffect(() => {
-        if (!roboId) return;
-        wsManagerRef.current = new RobotWebSocketManager({
-            robotId: roboId,
-            baseUrl: "ws://192.168.0.152:8002",
-            onScheduleUpdated: () => {
-                if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-                refreshTimeoutRef.current = setTimeout(() => fetchFilteredData(), 1000);
-            },
-            onConnected:    () => { setWsConnected(true);  setWsError(null); },
-            onDisconnected: () =>   setWsConnected(false),
-            onError: (err)  => { console.error("⚠️ WS error:", err); setWsError(err.message); },
-        });
-        wsManagerRef.current.connect().catch((err) => setWsError(err.message));
-        return () => {
-            wsManagerRef.current?.disconnect();
-            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-        };
-    }, [roboId, fetchFilteredData]);
-
-    /* ── Handlers ── */
-    const handlePageChange = (page: number) => {
-        if (page >= 1 && page <= pagination.total_pages) {
-            setCurrentPage(page);
-            window.scrollTo({ top: 0, behavior: "smooth" });
-        }
-    };
-
-    const handleScheduleClick = (scheduleId: number) => {
-        router.push(`/inspections?schedule_id=${scheduleId}&robot_id=${robotDbId}`);
-    };
-
-    const handleStatusChange = (val: string[]) => {
-        setStatusFilter(val);
-        setCurrentPage(1);
-    };
-
-    const filteredSchedules = schedules.filter((schedule) => {
-        if (searchQuery && !schedule.location.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-        if (statusFilter.length > 0 && !statusFilter.includes(schedule.status)) return false;
-        return true;
-    });
-
+    /* ── Filter label for header badge ── */
     const getFilterLabel = () => {
         if (!filterData) return null;
         switch (filterData.filter_type) {
@@ -371,7 +214,18 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
         }
     };
 
-    /* ── Invalid ID ── */
+    const handleScheduleClick = (scheduleId: number) => {
+        router.push(`/inspections?schedule_id=${scheduleId}&robot_id=${robotDbId}`);
+    };
+
+    // Client-side location search only; status filtering is server-side via parent
+    const filteredSchedules = searchQuery
+        ? schedules.filter((s) =>
+              s.location.toLowerCase().includes(searchQuery.toLowerCase())
+          )
+        : schedules;
+
+    /* ── Invalid ID guard ── */
     if (!robotDbId || isNaN(Number(robotDbId))) {
         return (
             <div className="flex items-center justify-center p-12">
@@ -382,7 +236,10 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
                         Robot ID is missing or invalid:{" "}
                         <code className="bg-red-50 px-2 py-1 rounded">{String(robotIdProp)}</code>
                     </p>
-                    <button onClick={() => router.push("/dashboard")} className="px-6 py-3 rounded-xl font-medium bg-teal-600 text-white shadow-lg hover:bg-teal-700 transition-colors">
+                    <button
+                        onClick={() => router.push("/dashboard")}
+                        className="px-6 py-3 rounded-xl font-medium bg-teal-600 text-white shadow-lg hover:bg-teal-700 transition-colors"
+                    >
                         Go to Dashboard
                     </button>
                 </div>
@@ -395,8 +252,12 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
         return (
             <div className="flex flex-col items-center justify-center p-12">
                 <Loader2 className="w-12 h-12 animate-spin text-teal-600" />
-                <p className="mt-6 text-gray-600 font-medium">Loading robot data and schedules...</p>
-                {robotData && <p className="mt-2 text-sm text-gray-500">Robot: {robotData.name} ({robotData.robo_id})</p>}
+                <p className="mt-6 text-gray-600 font-medium">Loading schedules...</p>
+                {robotData && (
+                    <p className="mt-2 text-sm text-gray-500">
+                        Robot: {robotData.name} ({robotData.robo_id})
+                    </p>
+                )}
             </div>
         );
     }
@@ -409,8 +270,13 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
                     <XCircle className="w-16 h-16 mx-auto mb-4 text-rose-600" />
                     <h3 className="text-xl font-semibold mb-2 text-gray-900">Failed to Load</h3>
                     <p className="mb-2 text-gray-600">{error}</p>
-                    <p className="text-sm text-gray-500 mb-4">Robot ID: {robotDbId}{roboId && ` (robo_id: ${roboId})`}</p>
-                    <button onClick={() => fetchFilteredData()} className="px-6 py-3 rounded-xl font-medium bg-teal-600 text-white shadow-lg hover:bg-teal-700 transition-colors">Retry</button>
+                    <p className="text-sm text-gray-500 mb-4">Robot ID: {robotDbId}</p>
+                    <button
+                        onClick={onRefresh}
+                        className="px-6 py-3 rounded-xl font-medium bg-teal-600 text-white shadow-lg hover:bg-teal-700 transition-colors"
+                    >
+                        Retry
+                    </button>
                 </div>
             </div>
         );
@@ -419,7 +285,8 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
     /* ===================== MAIN UI ===================== */
     return (
         <div className="bg-white p-6">
-            {/* Header */}
+
+            {/* ── Header ── */}
             <div className="mb-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -427,9 +294,14 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
                             <BarChart3 className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-semibold text-gray-900">Schedule Management</h1>
+                            <h1 className="text-2xl font-semibold text-gray-900">
+                                Schedule Management
+                            </h1>
                             <p className="text-sm font-semibold text-gray-500 mt-0.5">
-                                {robotData ? <>{robotData.name} Schedules</> : <>Robot ID: {robotDbId}</>}
+                                {robotData
+                                    ? <>{robotData.name} Schedules</>
+                                    : <>Robot ID: {robotDbId}</>
+                                }
                             </p>
                         </div>
                     </div>
@@ -442,20 +314,10 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
                 </div>
             </div>
 
-            {wsError && (
-                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                        <p className="font-medium text-amber-900">WebSocket Connection Issue</p>
-                        <p className="text-sm text-amber-700">{wsError}</p>
-                    </div>
-                </div>
-            )}
-
-            {/* Search & Status Filter */}
+            {/* ── Search & Status Filter ── */}
             <div className="mb-4 flex">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    {/* Search */}
+                    {/* Location search (client-side) */}
                     <div className="relative flex-1 max-w-md">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                         <input
@@ -467,12 +329,12 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
                         />
                     </div>
 
-                    {/* Status Multi-Select Dropdown */}
-                    <StatusDropdown value={statusFilter} onChange={handleStatusChange} />
+                    {/* Status filter — controlled by parent, triggers re-fetch */}
+                    <StatusDropdown value={statusFilter} onChange={onStatusFilterChange} />
                 </div>
             </div>
 
-            {/* Grid or empty */}
+            {/* ── Grid or empty state ── */}
             {filteredSchedules.length === 0 ? (
                 <div className="rounded-2xl border-2 border-dashed border-gray-300/50 p-16 text-center bg-white/50">
                     <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-400" />
@@ -488,42 +350,69 @@ function ScheduleListPage({ robotId: robotIdProp, filterData }: ScheduleListPage
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         {filteredSchedules.map((schedule) => (
                             <div key={schedule.id}>
-                                <ScheduleCard schedule={schedule} onClick={handleScheduleClick} onUpdate={fetchFilteredData} />
+                                <ScheduleCard
+                                    schedule={schedule}
+                                    onClick={handleScheduleClick}
+                                    onUpdate={onRefresh}
+                                />
                             </div>
                         ))}
                     </div>
 
-                    {/* Pagination */}
+                    {/* ── Pagination ── */}
                     <div className="flex items-center justify-between pt-6">
                         <div className="text-sm text-gray-600">
                             Showing{" "}
-                            <span className="font-semibold">{(pagination.current_page - 1) * pagination.page_size + 1}</span>
+                            <span className="font-semibold">
+                                {(pagination.current_page - 1) * pagination.page_size + 1}
+                            </span>
                             {" "}to{" "}
-                            <span className="font-semibold">{Math.min(pagination.current_page * pagination.page_size, pagination.total_records)}</span>
+                            <span className="font-semibold">
+                                {Math.min(
+                                    pagination.current_page * pagination.page_size,
+                                    pagination.total_records,
+                                )}
+                            </span>
                             {" "}of{" "}
-                            <span className="font-semibold">{pagination.total_records}</span> schedules
+                            <span className="font-semibold">{pagination.total_records}</span>{" "}
+                            schedules
                         </div>
+
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={() => handlePageChange(pagination.current_page - 1)}
+                                onClick={() => onPageChange(pagination.current_page - 1)}
                                 disabled={!pagination.has_previous}
-                                className={`p-2 rounded-lg border transition-all ${pagination.has_previous ? "bg-white hover:bg-gray-50 text-gray-700" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                                className={`p-2 rounded-lg border transition-all ${
+                                    pagination.has_previous
+                                        ? "bg-white hover:bg-gray-50 text-gray-700"
+                                        : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                }`}
                             >
                                 <ChevronLeft className="w-4 h-4" />
                             </button>
+
                             {Array.from({ length: pagination.total_pages }, (_, i) => i + 1).map((page) => (
                                 <button
                                     key={page}
-                                    onClick={() => handlePageChange(page)}
-                                    className={`w-9 h-9 rounded-lg font-medium text-sm transition-all ${page === pagination.current_page ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md" : "bg-white border border-gray-200/50 text-gray-700 hover:bg-gray-50"}`}
+                                    onClick={() => onPageChange(page)}
+                                    className={`w-9 h-9 rounded-lg font-medium text-sm transition-all ${
+                                        page === pagination.current_page
+                                            ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md"
+                                            : "bg-white border border-gray-200/50 text-gray-700 hover:bg-gray-50"
+                                    }`}
                                 >
                                     {page}
                                 </button>
                             ))}
+
                             <button
-                                onClick={() => handlePageChange(pagination.current_page + 1)}
+                                onClick={() => onPageChange(pagination.current_page + 1)}
                                 disabled={!pagination.has_next}
-                                className={`p-2 rounded-lg border transition-all ${pagination.has_next ? "bg-white hover:bg-gray-50 text-gray-700" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                                className={`p-2 rounded-lg border transition-all ${
+                                    pagination.has_next
+                                        ? "bg-white hover:bg-gray-50 text-gray-700"
+                                        : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                }`}
                             >
                                 <ChevronRight className="w-4 h-4" />
                             </button>
