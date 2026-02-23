@@ -439,7 +439,7 @@ function DashboardContent() {
                         </div>
                     </div>
 
-                    <div className="w-[23%]">
+                    <div className="lg:w-[23%]">
                         <div className="rounded-2xl bg-white shadow-lg overflow-hidden backdrop-blur-sm sticky top-20">
                             <CreateSchedule robotId={robotId} />
                         </div>
