@@ -394,16 +394,6 @@ export function RobotCard({
                                 </button>
                             </div>
                         </div>
-
-                        {/* Last Active */}
-                        <div>
-                            <div className="text-xs text-gray-500 mb-1">
-                                Last Active
-                            </div>
-                            <div className="text-sm font-medium text-gray-700">
-                                {formatDate(localRobot.last_seen)}
-                            </div>
-                        </div>
                     </div>
 
                     {/* Battery Progress Bar */}

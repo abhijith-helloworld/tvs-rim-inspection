@@ -157,7 +157,7 @@ const StatCard = ({
 }: {
     label: string;
     value: number | string;
-    icon: React.ReactElement;
+    icon: React.ReactElement<{ className?: string }>;
     bgColor: string;
     textColor: string;
     badgeColor: string;

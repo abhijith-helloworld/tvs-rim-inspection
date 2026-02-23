@@ -180,7 +180,7 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
                                         }`}
                                     >
                                         <div className="flex items-center gap-2.5">
-                                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${opt.dot}`} />
+                                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${opt}`} />
                                             <span className="font-medium">{opt.label}</span>
                                         </div>
                                         <div

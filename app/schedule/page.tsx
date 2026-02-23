@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import SchedulesList from "./[id]/page";
+// import SchedulesList from "./[id]/page";
 import CreateSchedule from "./Shedulecreat";
+import SchedulesList from "./[id]/page"; // ✅
 import { tokenStorage, API_BASE_URL, fetchWithAuth } from "../lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
