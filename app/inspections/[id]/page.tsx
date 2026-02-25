@@ -124,6 +124,7 @@ export default function InspectionDetailPage() {
     const [time,        setTime]        = useState<string>(new Date().toLocaleTimeString());
 
     const wsRef = useRef<WebSocket | null>(null);
+    const WS_URL = process.env.NEXT_PUBLIC_WS_URL;
 
     /* ── Clock ── */
     useEffect(() => {
@@ -165,7 +166,7 @@ export default function InspectionDetailPage() {
 
         const connect = () => {
             try {
-                ws = new WebSocket(`ws://192.168.0.152:8002/ws/robot_message/${roboId}/`);
+                ws = new WebSocket(`${WS_URL}/ws/robot_message/${roboId}/`);
                 wsRef.current = ws;
 
                 ws.onopen = () => {

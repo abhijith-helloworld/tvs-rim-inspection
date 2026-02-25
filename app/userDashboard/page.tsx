@@ -159,6 +159,8 @@ const Dashboard: React.FC = () => {
     const router = useRouter();
     const websocketsRef = useRef<Map<string, WebSocket>>(new Map());
 
+    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL
+
     const handleRobotClick = (robotId: number) => {
         // If clicking the same robot, navigate to detail page
         if (selectedRobotId === robotId) {
@@ -240,7 +242,7 @@ const Dashboard: React.FC = () => {
 
         const connect = () => {
             try {
-                const wsUrl = `ws://192.168.0.152:8002/ws/robot_message/${roboId}/`;
+                const wsUrl = `${wsBaseUrl}/ws/robot_message/${roboId}/`;
                 const ws = new WebSocket(wsUrl);
                 websocketsRef.current.set(roboId, ws);
 

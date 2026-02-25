@@ -33,6 +33,8 @@ export function RobotCard({
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+    const WS_URL = process.env.NEXT_PUBLIC_WS_URL;
+
     // Update local robot when prop changes
     useEffect(() => {
         setLocalRobot(robot);
@@ -44,7 +46,7 @@ export function RobotCard({
             try {
                 // Create WebSocket connection using robot's robo_id
                 const ws = new WebSocket(
-                    `ws://192.168.0.152:8002/ws/robot_message/${robot.robo_id}/`,
+                    `${WS_URL}/ws/robot_message/${robot.robo_id}/`,
                 );
 
                 ws.onopen = () => {

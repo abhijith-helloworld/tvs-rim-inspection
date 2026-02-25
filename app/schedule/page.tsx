@@ -98,13 +98,13 @@ const DEFAULT_PAGINATION: Pagination = {
 /* ── Filter body builder ──────────────────────────────────────── */
 function buildFilterBody(
     filterData: FilterData,
-    statusFilter: string[]
+    statusFilter: string[],
 ): Record<string, string | string[] | undefined> {
     return {
         filter_type: filterData.filter_type,
-        date:        filterData.date       || undefined,
-        start_date:  filterData.start_date || undefined,
-        end_date:    filterData.end_date   || undefined,
+        date: filterData.date || undefined,
+        start_date: filterData.start_date || undefined,
+        end_date: filterData.end_date || undefined,
         ...(statusFilter.length > 0 ? { status: statusFilter } : {}),
     };
 }
@@ -114,49 +114,59 @@ function buildFilterBody(
    ================================================================ */
 
 function DashboardContent() {
-    const router      = useRouter();
+    const router = useRouter();
     const searchParams = useSearchParams();
 
     /* ── URL / init state ───────────────────────────────────────── */
-    const [robotId,       setRobotId]       = useState<string>("");
+    const [robotId, setRobotId] = useState<string>("");
     const [isInitialized, setIsInitialized] = useState(false);
-    const [filterData,    setFilterData]    = useState<FilterData>({
+    const [filterData, setFilterData] = useState<FilterData>({
         filter_type: "month",
-        date:        "",
-        start_date:  "",
-        end_date:    "",
+        date: "",
+        start_date: "",
+        end_date: "",
     });
 
     /* ── Robot state ────────────────────────────────────────────── */
-    const [robotData,    setRobotData]   = useState<RobotData | null>(null);
-    const [roboId,       setRoboId]      = useState<string>("");
-    const [battery,      setBattery]     = useState<BatteryStatus>(DEFAULT_BATTERY);
-    const [robotStatus,  setRobotStatus] = useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
-    const [wsConnected,  setWsConnected] = useState<boolean>(false);
+    const [robotData, setRobotData] = useState<RobotData | null>(null);
+    const [roboId, setRoboId] = useState<string>("");
+    const [battery, setBattery] = useState<BatteryStatus>(DEFAULT_BATTERY);
+    const [robotStatus, setRobotStatus] =
+        useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
+    const [wsConnected, setWsConnected] = useState<boolean>(false);
 
     /* ── Schedule state (owned here, passed to list) ────────────── */
-    const [schedules,       setSchedules]       = useState<Schedule[]>([]);
-    const [pagination,      setPagination]      = useState<Pagination>(DEFAULT_PAGINATION);
+    const [schedules, setSchedules] = useState<Schedule[]>([]);
+    const [pagination, setPagination] =
+        useState<Pagination>(DEFAULT_PAGINATION);
     const [scheduleSummary, setScheduleSummary] = useState<ScheduleSummary>({
-        total: 0, scheduled: 0, processing: 0, completed: 0,
+        total: 0,
+        scheduled: 0,
+        processing: 0,
+        completed: 0,
     });
-    const [statusFilter,    setStatusFilter]    = useState<string[]>([]);
-    const [currentPage,     setCurrentPage]     = useState(1);
+    const [statusFilter, setStatusFilter] = useState<string[]>([]);
+    const [currentPage, setCurrentPage] = useState(1);
     const PAGE_SIZE = 8;
 
     /* ── Loading / error ────────────────────────────────────────── */
     const [schedulesLoading, setSchedulesLoading] = useState(false);
-    const [schedulesError,   setSchedulesError]   = useState<string | null>(null);
+    const [schedulesError, setSchedulesError] = useState<string | null>(null);
 
     /* ── Clock ──────────────────────────────────────────────────── */
     const [time, setTime] = useState<string>(new Date().toLocaleTimeString());
 
-    const wsRef            = useRef<WebSocket | null>(null);
+    const wsRef = useRef<WebSocket | null>(null);
     const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const WS_URL = process.env.NEXT_PUBLIC_WS_URL;
 
     /* ── Clock tick ─────────────────────────────────────────────── */
     useEffect(() => {
-        const interval = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
+        const interval = setInterval(
+            () => setTime(new Date().toLocaleTimeString()),
+            1000,
+        );
         return () => clearInterval(interval);
     }, []);
 
@@ -165,10 +175,13 @@ function DashboardContent() {
         const robotIdParam = searchParams.get("robot_id");
         setRobotId(robotIdParam ?? "");
         setFilterData({
-            filter_type: (searchParams.get("filter_type") as FilterData["filter_type"]) ?? "month",
-            date:        searchParams.get("date")       ?? "",
-            start_date:  searchParams.get("start_date") ?? "",
-            end_date:    searchParams.get("end_date")   ?? "",
+            filter_type:
+                (searchParams.get(
+                    "filter_type",
+                ) as FilterData["filter_type"]) ?? "month",
+            date: searchParams.get("date") ?? "",
+            start_date: searchParams.get("start_date") ?? "",
+            end_date: searchParams.get("end_date") ?? "",
         });
         setIsInitialized(true);
     }, [searchParams]);
@@ -183,14 +196,19 @@ function DashboardContent() {
         if (!robotId || !isInitialized) return;
         const fetchRobotData = async () => {
             try {
-                const response = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/`);
+                const response = await fetchWithAuth(
+                    `${API_BASE_URL}/robots/${robotId}/`,
+                );
                 if (!response.ok) throw new Error("Failed to fetch robot data");
                 const json = await response.json();
                 if (json.success && json.data) {
                     const robot: RobotData = json.data;
                     setRobotData(robot);
                     if (typeof robot.battery_level === "number") {
-                        setBattery((prev) => ({ ...prev, level: robot.battery_level as number }));
+                        setBattery((prev) => ({
+                            ...prev,
+                            level: robot.battery_level as number,
+                        }));
                     }
                     if (robot.robo_id) setRoboId(robot.robo_id as string);
                 }
@@ -208,26 +226,33 @@ function DashboardContent() {
         setSchedulesError(null);
         try {
             const body = buildFilterBody(filterData, statusFilter);
-            const url  = `${API_BASE_URL}/schedule/robot/${robotId}/filter/?page=${currentPage}&page_size=${PAGE_SIZE}`;
+            const url = `${API_BASE_URL}/schedule/robot/${robotId}/filter/?page=${currentPage}&page_size=${PAGE_SIZE}`;
 
             const response = await fetchWithAuth(url, {
-                method:  "POST",
+                method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body:    JSON.stringify(body),
+                body: JSON.stringify(body),
             });
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`HTTP ${response.status}: ${errorText || "Unknown error"}`);
+                throw new Error(
+                    `HTTP ${response.status}: ${errorText || "Unknown error"}`,
+                );
             }
 
             const result = await response.json();
-            if (!result.success) throw new Error(result.message || "Failed to fetch schedules");
+            if (!result.success)
+                throw new Error(result.message || "Failed to fetch schedules");
 
             // Sort schedules newest first
             const sorted = [...(result.schedules || [])].sort((a, b) => {
-                const dateA = new Date(`${a.scheduled_date}T${a.scheduled_time}`).getTime();
-                const dateB = new Date(`${b.scheduled_date}T${b.scheduled_time}`).getTime();
+                const dateA = new Date(
+                    `${a.scheduled_date}T${a.scheduled_time}`,
+                ).getTime();
+                const dateB = new Date(
+                    `${b.scheduled_date}T${b.scheduled_time}`,
+                ).getTime();
                 return dateB - dateA;
             });
 
@@ -240,7 +265,6 @@ function DashboardContent() {
             if (result.schedule_summary) {
                 setScheduleSummary(result.schedule_summary);
             }
-
         } catch (err: any) {
             setSchedulesError(err.message || "Failed to load schedules");
             setSchedules([]);
@@ -259,13 +283,13 @@ function DashboardContent() {
     useEffect(() => {
         if (!roboId) return;
 
-        let isManualClose   = false;
+        let isManualClose = false;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
         let ws: WebSocket | null = null;
 
         const connect = () => {
             try {
-                ws = new WebSocket(`ws://192.168.0.152:8002/ws/robot_message/${roboId}/`);
+                ws = new WebSocket(`${WS_URL}/ws/robot_message/${roboId}/`);
                 wsRef.current = ws;
 
                 ws.onopen = () => setWsConnected(true);
@@ -275,29 +299,40 @@ function DashboardContent() {
                         const payload = JSON.parse(event.data as string);
 
                         if (payload.event === "battery_information") {
-                            const soc     = Number(payload.data?.soc)     || 0;
+                            const soc = Number(payload.data?.soc) || 0;
                             const current = Number(payload.data?.current) || 0;
                             const voltage = Number(payload.data?.voltage) || 0;
-                            const power   = Number(payload.data?.power)   || 0;
-                            const dod     = Number(payload.data?.dod)     || 0;
+                            const power = Number(payload.data?.power) || 0;
+                            const dod = Number(payload.data?.dod) || 0;
                             const status: BatteryStatus["status"] =
-                                current > 0.5 ? "charging"
-                                : soc >= 99   ? "full"
-                                : soc < 20    ? "low"
-                                :               "discharging";
+                                current > 0.5
+                                    ? "charging"
+                                    : soc >= 99
+                                      ? "full"
+                                      : soc < 20
+                                        ? "low"
+                                        : "discharging";
                             setBattery({
                                 level: soc,
                                 status,
                                 timeRemaining: `${Math.floor(soc / 20)}h ${Math.floor((soc % 20) * 3)}m`,
-                                voltage, current, power, dod,
+                                voltage,
+                                current,
+                                power,
+                                dod,
                             });
                         }
 
                         if (payload.event === "robot_status") {
                             setRobotStatus((prev) => ({
-                                break_status:     payload.data.break_status     ?? prev.break_status,
-                                emergency_status: payload.data.emergency_status ?? prev.emergency_status,
-                                Arm_moving:       payload.data.Arm_moving       ?? prev.Arm_moving,
+                                break_status:
+                                    payload.data.break_status ??
+                                    prev.break_status,
+                                emergency_status:
+                                    payload.data.emergency_status ??
+                                    prev.emergency_status,
+                                Arm_moving:
+                                    payload.data.Arm_moving ?? prev.Arm_moving,
                             }));
                         }
 
@@ -306,8 +341,12 @@ function DashboardContent() {
                             payload.event === "schedule_updated" ||
                             payload.event === "schedule_created"
                         ) {
-                            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-                            refreshTimeoutRef.current = setTimeout(() => fetchSchedules(), 1000);
+                            if (refreshTimeoutRef.current)
+                                clearTimeout(refreshTimeoutRef.current);
+                            refreshTimeoutRef.current = setTimeout(
+                                () => fetchSchedules(),
+                                1000,
+                            );
                         }
                     } catch (err) {
                         console.error("❌ WS message parse error:", err);
@@ -319,11 +358,13 @@ function DashboardContent() {
                 ws.onclose = () => {
                     setWsConnected(false);
                     wsRef.current = null;
-                    if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
+                    if (!isManualClose)
+                        reconnectTimeout = setTimeout(connect, 3000);
                 };
             } catch (err) {
                 console.error("❌ WS init failed:", err);
-                if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
+                if (!isManualClose)
+                    reconnectTimeout = setTimeout(connect, 3000);
             }
         };
 
@@ -331,7 +372,8 @@ function DashboardContent() {
         return () => {
             isManualClose = true;
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
-            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+            if (refreshTimeoutRef.current)
+                clearTimeout(refreshTimeoutRef.current);
             ws?.close();
             wsRef.current = null;
         };
@@ -343,12 +385,15 @@ function DashboardContent() {
         setCurrentPage(1);
     }, []);
 
-    const handlePageChange = useCallback((page: number) => {
-        if (page >= 1 && page <= pagination.total_pages) {
-            setCurrentPage(page);
-            window.scrollTo({ top: 0, behavior: "smooth" });
-        }
-    }, [pagination.total_pages]);
+    const handlePageChange = useCallback(
+        (page: number) => {
+            if (page >= 1 && page <= pagination.total_pages) {
+                setCurrentPage(page);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+            }
+        },
+        [pagination.total_pages],
+    );
 
     /* ── Loading guard ──────────────────────────────────────────── */
     if (!isInitialized || !robotId) {
@@ -365,7 +410,6 @@ function DashboardContent() {
     /* ── Render ─────────────────────────────────────────────────── */
     return (
         <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50/30 p-6">
-
             <RobotDashboardHeader
                 title="Robotic Schedule Dashboard"
                 subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
@@ -379,22 +423,29 @@ function DashboardContent() {
             <div>
                 {/* ── Stats Grid — sourced from schedule_summary in filter response ── */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
-
                     <div className="bg-blue-50 rounded-2xl border border-blue-100 p-6 transition-all duration-200 hover:shadow-lg shadow-sm backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading ? "..." : scheduleSummary.total}
+                                {schedulesLoading
+                                    ? "..."
+                                    : scheduleSummary.total}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">Total Schedule</p>
+                            <p className="text-sm text-gray-600 font-medium">
+                                Total Schedule
+                            </p>
                         </div>
                     </div>
 
                     <div className="bg-green-50 rounded-2xl shadow-sm border border-green-100 p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading ? "..." : scheduleSummary.completed}
+                                {schedulesLoading
+                                    ? "..."
+                                    : scheduleSummary.completed}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">Completed</p>
+                            <p className="text-sm text-gray-600 font-medium">
+                                Completed
+                            </p>
                         </div>
                     </div>
 
@@ -402,18 +453,26 @@ function DashboardContent() {
                     <div className="bg-amber-50 rounded-2xl shadow-sm border border-amber-100 p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading ? "..." : scheduleSummary.scheduled}
+                                {schedulesLoading
+                                    ? "..."
+                                    : scheduleSummary.scheduled}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">Pending</p>
+                            <p className="text-sm text-gray-600 font-medium">
+                                Pending
+                            </p>
                         </div>
                     </div>
 
                     <div className="bg-blue-50 rounded-2xl shadow-sm border border-gray-200/50 p-6 transition-all duration-200 hover:shadow-lg hover:border-gray-300 backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading ? "..." : scheduleSummary.processing}
+                                {schedulesLoading
+                                    ? "..."
+                                    : scheduleSummary.processing}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">Processing</p>
+                            <p className="text-sm text-gray-600 font-medium">
+                                Processing
+                            </p>
                         </div>
                     </div>
                 </div>

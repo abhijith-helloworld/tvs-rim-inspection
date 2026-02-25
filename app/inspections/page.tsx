@@ -213,6 +213,8 @@ export default function InspectionsBySchedule() {
     const pageSize   = 10;
     const totalPages = Math.ceil(count / pageSize);
 
+    const WS_URL = process.env.NEXT_PUBLIC_WS_URL;
+
     /* ── Clock ── */
     useEffect(() => {
         const interval = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
@@ -251,7 +253,7 @@ export default function InspectionsBySchedule() {
 
         const connect = () => {
             try {
-                ws = new WebSocket(`ws://192.168.0.152:8002/ws/robot_message/${roboId}/`);
+                ws = new WebSocket(`${WS_URL}/ws/robot_message/${roboId}/`);
                 wsRef.current = ws;
 
                 ws.onopen = () => setWsConnected(true);

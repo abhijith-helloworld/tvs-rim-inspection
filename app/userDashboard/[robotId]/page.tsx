@@ -384,7 +384,6 @@ const Dashboard: React.FC = () => {
     const [robotData, setRobotData] = useState<RobotData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
     const [showFilterModal, setShowFilterModal] = useState(false);
     const [currentFilter, setCurrentFilter] = useState<FilterData>(() => {
         try {
@@ -396,6 +395,7 @@ const Dashboard: React.FC = () => {
             date: new Date().toISOString().split("T")[0],
         };
     });
+    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL;
 
     // Persist filter to localStorage whenever it changes
     useEffect(() => {
@@ -762,7 +762,7 @@ const Dashboard: React.FC = () => {
         const connect = () => {
             try {
                 ws = new WebSocket(
-                    `ws://192.168.0.152:8002/ws/robot_message/${roboId}/`,
+                     `${wsBaseUrl}/ws/robot_message/${roboId}/`,
                 );
                 wsRef.current = ws;
                 ws.onopen = () => setWsConnected(true);
