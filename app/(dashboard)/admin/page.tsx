@@ -14,7 +14,6 @@ import { ConfirmModal } from "./components/ConfirmModal";
 import {
     showSuccess,
     showError,
-    showInfo,
 } from "./components/NotificationService";
 
 export default function RobotManagementPage() {
@@ -303,17 +302,6 @@ export default function RobotManagementPage() {
                             {Math.min(currentPage * pageSize, totalCount)} of{" "}
                             {totalCount} robots
                         </p>
-
-                        <button
-                            onClick={() =>
-                                showInfo(
-                                    "Use toggle to activate/deactivate robots",
-                                )
-                            }
-                            className="text-xs sm:text-sm text-cyan-600 hover:text-cyan-700 font-medium self-start sm:self-auto"
-                        >
-                            Help
-                        </button>
                     </div>
 
                     {/* Robot Cards Grid – already responsive */}

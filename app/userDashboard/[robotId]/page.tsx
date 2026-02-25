@@ -48,6 +48,12 @@ export interface RobotStatus {
     Arm_moving: boolean;
 }
 
+export interface OperationMode {
+    mode: "AUTO" | "MAINTENANCE" | "NORMAL";
+    speed?: number;
+    inspection?: boolean;
+}
+
 interface CameraStatus {
     connected: boolean;
     usb_speed: string;
@@ -86,6 +92,11 @@ export interface FilterData {
 interface NavigationPayload {
     navigation_mode: "stationary" | "autonomous";
     navigation_style?: "free" | "strict" | "strict_with_autonomous";
+}
+
+interface WebSocketMessage {
+    event: string;
+    data?: any;
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -127,6 +138,11 @@ const DEFAULT_CAMERAS = {
 };
 
 const DEFAULT_ARM_TEMPERATURE = 0;
+const DEFAULT_OPERATION_MODE: OperationMode = {
+    mode: "AUTO",
+    speed: 0,
+    inspection: false,
+};
 
 const WS_TIMEOUT_MS = 3000;
 
@@ -452,6 +468,7 @@ const Dashboard: React.FC = () => {
 
     // ── WebSocket state ───────────────────────────────────────────────────────
     const [wsConnected, setWsConnected] = useState(false);
+    const [wsEvent, setWsEvent] = useState<WebSocketMessage | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
 
     // ── Data summaries ────────────────────────────────────────────────────────
@@ -472,6 +489,9 @@ const Dashboard: React.FC = () => {
     const [robotStatus, setRobotStatus] =
         useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
     const [time, setTime] = useState(new Date().toLocaleTimeString());
+    const [operationMode, setOperationMode] = useState<OperationMode | null>(
+        DEFAULT_OPERATION_MODE,
+    );
 
     // ── WebSocket channels ────────────────────────────────────────────────────
     const batteryChannel = useWsChannel<BatteryStatus>(DEFAULT_BATTERY);
@@ -602,10 +622,32 @@ const Dashboard: React.FC = () => {
         if (robotId) fetchLocations(robotId);
     }, [robotId, fetchLocations]);
 
+    // ── Fetch operation mode from API ─────────────────────────────────────────
+    const fetchOperationMode = useCallback(async () => {
+        if (!robotId) return;
+        try {
+            const res = await fetchWithAuth(
+                `${API_BASE_URL}/robots/${robotId}/operation-mode/`,
+            );
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const result = await res.json();
+            const opMode = result.operation_mode || result;
+            setOperationMode(opMode);
+            console.log("✅ Operation mode fetched:", opMode);
+        } catch (err) {
+            console.error("❌ Failed to fetch operation mode:", err);
+        }
+    }, [robotId]);
+
+    // Store fetch function in ref for WebSocket closure
+    const fetchOperationModeRef = useRef(fetchOperationMode);
+    useEffect(() => {
+        fetchOperationModeRef.current = fetchOperationMode;
+    }, [fetchOperationMode]);
+
     const refetchNavigation = useCallback(async () => {
         if (!robotId) return;
         try {
-            setNavFetchLoading(true);
             const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/navigation/`,
             );
@@ -614,8 +656,6 @@ const Dashboard: React.FC = () => {
             if (result.data) applyNavData(result.data);
         } catch (err) {
             console.error("❌ Failed to fetch navigation state:", err);
-        } finally {
-            setNavFetchLoading(false);
         }
     }, [robotId, applyNavData]);
 
@@ -762,7 +802,7 @@ const Dashboard: React.FC = () => {
         const connect = () => {
             try {
                 ws = new WebSocket(
-                     `${wsBaseUrl}/ws/robot_message/${roboId}/`,
+                    `${wsBaseUrl}/ws/robot_message/${roboId}/`,
                 );
                 wsRef.current = ws;
                 ws.onopen = () => setWsConnected(true);
@@ -770,6 +810,9 @@ const Dashboard: React.FC = () => {
                 ws.onmessage = (event) => {
                     try {
                         const payload = JSON.parse(event.data as string);
+
+                        // Store the raw event for operation mode handling
+                        setWsEvent(payload);
 
                         // ── Map uploaded → refresh locations ──────────────────
                         if (
@@ -872,6 +915,15 @@ const Dashboard: React.FC = () => {
                             armTempChannel.update(
                                 Number(payload.data?.temperature) || 0,
                             );
+                        }
+
+                        // ── Operation mode updated → fetch from API ──────────
+                        if (payload.event === "operation_mode_updated") {
+                            console.log(
+                                "🔄 operation_mode_updated event received:",
+                                payload.data,
+                            );
+                            fetchOperationModeRef.current();
                         }
 
                         // ── Navigation updated / cross-client sync ────────────
@@ -1010,6 +1062,9 @@ const Dashboard: React.FC = () => {
                 minimumThreshold={robotData?.minimum_battery_charge ?? 20}
             />
 
+            {/* ═══════════════════════════════════════════════════════════════ */}
+            {/* ROBOT DASHBOARD HEADER WITH OPERATION MODE */}
+            {/* ═══════════════════════════════════════════════════════════════ */}
             <RobotDashboardHeader
                 title="Robotic Inspection Dashboard"
                 subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
@@ -1018,7 +1073,11 @@ const Dashboard: React.FC = () => {
                 robotStatus={robotStatus}
                 wsConnected={wsConnected}
                 time={time}
-                lastWsEvent={null}
+                operationMode={operationMode}
+                onOperationModeUpdated={(mode) => {
+                    console.log("Operation mode callback:", mode);
+                    setOperationMode(mode);
+                }}
             />
 
             <main className="flex flex-col lg:flex-row gap-6 mt-6">
@@ -1630,13 +1689,6 @@ const Dashboard: React.FC = () => {
                                             <div
                                                 className={`w-2 h-2 rounded-full ${cam.connected ? "bg-emerald-500" : "bg-red-500"}`}
                                             />
-                                            {/* <span
-                                                className={`text-xs font-medium ${cam.connected ? "text-emerald-600" : "text-red-600"}`}
-                                            >
-                                                {cam.connected
-                                                    ? "Connected"
-                                                    : "Disconnected"}
-                                            </span> */}
                                         </div>
                                         <div className="mt-2 space-y-1">
                                             {[

@@ -13,6 +13,7 @@ import {
     BatteryFull,
     BatteryWarning,
     Zap,
+    Settings,
     type LucideIcon,
 } from "lucide-react";
 
@@ -34,6 +35,12 @@ interface RobotStatus {
     break_status: boolean;
     emergency_status: boolean;
     Arm_moving: boolean;
+}
+
+interface OperationMode {
+    mode: "AUTO" | "MAINTENANCE" | "NORMAL";
+    speed?: number;
+    inspection?: boolean;
 }
 
 interface RobotData {
@@ -59,6 +66,8 @@ interface RobotDashboardHeaderProps {
     wsConnected: boolean;
     time: string;
     lastWsEvent?: string | null;
+    operationMode?: OperationMode | null;
+    onOperationModeUpdated?: (mode: OperationMode) => void;
 }
 
 /* ================================================================
@@ -73,6 +82,56 @@ const DEFAULT_ROBOT_STATUS: RobotStatus = {
 
 /** ms of silence before resetting robot_status to all-false */
 const ROBOT_STATUS_TIMEOUT_MS = 3000;
+
+/* ================================================================
+   OPERATION MODE BUTTON
+   ================================================================ */
+
+const OperationModeButton = ({
+    mode,
+}: {
+    mode: OperationMode | null | undefined;
+}) => {
+    const isMaintenance = mode?.mode === "MAINTENANCE";
+    const isAuto = mode?.mode === "AUTO";
+    const isNormal = mode?.mode === "NORMAL";
+
+    const cs = isMaintenance
+        ? {
+              bg: "bg-amber-50",
+              border: "border-amber-200",
+              text: "text-amber-700",
+              icon: "text-amber-500",
+              dot: "bg-amber-500",
+          }
+        : isAuto || isNormal
+          ? {
+                bg: "bg-emerald-50",
+                border: "border-emerald-200",
+                text: "text-emerald-700",
+                icon: "text-emerald-500",
+                dot: "bg-emerald-500",
+            }
+          : {
+                bg: "bg-slate-50",
+                border: "border-slate-200",
+                text: "text-slate-400",
+                icon: "text-slate-400",
+                dot: "bg-slate-400",
+            };
+
+    return (
+        <div
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${cs.bg} ${cs.border} ${cs.text}`}
+            title={`Operation Mode: ${mode?.mode ?? "Unknown"}`}
+        >
+            <Settings className={`w-4 h-4 ${cs.icon}`} />
+            <span className="font-semibold">
+                {mode?.mode ?? "AUTO"}
+            </span>
+        </div>
+    );
+};
 
 /* ================================================================
    BATTERY INDICATOR
@@ -383,6 +442,8 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
     robotStatus,
     wsConnected,
     time,
+    operationMode,
+    onOperationModeUpdated,
 }) => {
     const minimumCharge = robotData?.minimum_battery_charge ?? 20;
 
@@ -404,7 +465,7 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
 
                 {/* Right-side controls - Modified for tablet view */}
                 <div className="flex flex-col md:flex-row lg:flex-row items-start md:items-center lg:items-center gap-3 md:gap-4 w-full lg:w-auto">
-                    {/* First row on tablet: Connection + Battery */}
+                    {/* First row on tablet: Connection + Battery + Operation Mode */}
                     <div className="flex flex-row items-center gap-3 w-full md:w-auto">
                         <ConnectionStatus wsConnected={wsConnected} />
                         <BatteryIndicator
@@ -412,6 +473,7 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                             status={battery.status}
                             minimumCharge={minimumCharge}
                         />
+                        <OperationModeButton mode={operationMode} />
                     </div>
 
                     {/* Second row on tablet: Status + Time */}

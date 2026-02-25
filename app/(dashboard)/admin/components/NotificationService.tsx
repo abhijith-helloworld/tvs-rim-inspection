@@ -23,13 +23,6 @@ export const showWarning = (message: string) => {
 };
 
 
-export const showInfo = (message: string) => {
-  toast.info(message, {
-    duration: 4000,
-    position: "top-right",
-  });
-};
-
 export const dismissToast = (id: string | number) => {
   toast.dismiss(id);
 };
