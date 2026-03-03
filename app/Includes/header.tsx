@@ -17,38 +17,18 @@ import {
     type LucideIcon,
 } from "lucide-react";
 
+import type { RobotData, BatteryStatus, RobotStatus } from "../types/robot";
+import { fetchWithAuth, API_BASE_URL } from "../lib/auth";
+
+
 /* ================================================================
-   TYPES
+   LOCAL TYPES
    ================================================================ */
-
-interface BatteryStatus {
-    level: number;
-    status: "charging" | "discharging" | "full" | "low";
-    timeRemaining: string;
-    voltage?: number;
-    current?: number;
-    power?: number;
-    dod?: number;
-}
-
-interface RobotStatus {
-    break_status: boolean;
-    emergency_status: boolean;
-    Arm_moving: boolean;
-}
 
 interface OperationMode {
     mode: "AUTO" | "MAINTENANCE" | "NORMAL";
     speed?: number;
     inspection?: boolean;
-}
-
-interface RobotData {
-    id: string;
-    name: string;
-    status: string;
-    robo_id?: string;
-    minimum_battery_charge?: number;
 }
 
 interface RobotDashboardHeaderProps {
@@ -57,17 +37,14 @@ interface RobotDashboardHeaderProps {
     icon?: LucideIcon;
     robotData: RobotData | null;
     battery: BatteryStatus;
-    /**
-     * robotStatus: the latest value pushed from the dashboard via the
-     * "robot_status" WebSocket event.  The header will auto-reset every
-     * field back to false after 3 seconds of silence (no new event).
-     */
     robotStatus: RobotStatus;
     wsConnected: boolean;
     time: string;
     lastWsEvent?: string | null;
     operationMode?: OperationMode | null;
     onOperationModeUpdated?: (mode: OperationMode) => void;
+    /** Your already-connected WebSocket instance */
+    ws?: WebSocket | null;
 }
 
 /* ================================================================
@@ -80,55 +57,30 @@ const DEFAULT_ROBOT_STATUS: RobotStatus = {
     Arm_moving: false,
 };
 
-/** ms of silence before resetting robot_status to all-false */
 const ROBOT_STATUS_TIMEOUT_MS = 3000;
 
 /* ================================================================
    OPERATION MODE BUTTON
    ================================================================ */
 
-const OperationModeButton = ({
-    mode,
-}: {
-    mode: OperationMode | null | undefined;
-}) => {
+const OperationModeButton = ({ mode }: { mode: OperationMode | null | undefined }) => {
     const isMaintenance = mode?.mode === "MAINTENANCE";
     const isAuto = mode?.mode === "AUTO";
     const isNormal = mode?.mode === "NORMAL";
 
     const cs = isMaintenance
-        ? {
-              bg: "bg-amber-50",
-              border: "border-amber-200",
-              text: "text-amber-700",
-              icon: "text-amber-500",
-              dot: "bg-amber-500",
-          }
+        ? { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", icon: "text-amber-500" }
         : isAuto || isNormal
-          ? {
-                bg: "bg-emerald-50",
-                border: "border-emerald-200",
-                text: "text-emerald-700",
-                icon: "text-emerald-500",
-                dot: "bg-emerald-500",
-            }
-          : {
-                bg: "bg-slate-50",
-                border: "border-slate-200",
-                text: "text-slate-400",
-                icon: "text-slate-400",
-                dot: "bg-slate-400",
-            };
+          ? { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", icon: "text-emerald-500" }
+          : { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-400", icon: "text-slate-400" };
 
     return (
         <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${cs.bg} ${cs.border} ${cs.text}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 ${cs.bg} ${cs.border} ${cs.text}`}
             title={`Operation Mode: ${mode?.mode ?? "Unknown"}`}
         >
             <Settings className={`w-4 h-4 ${cs.icon}`} />
-            <span className="font-semibold">
-                {mode?.mode ?? "AUTO"}
-            </span>
+            <span className="font-semibold">{mode?.mode ?? "AUTO"}</span>
         </div>
     );
 };
@@ -150,49 +102,22 @@ const BatteryIndicator = ({
     const isCharging = status === "charging";
 
     const Icon =
-        level <= 15
-            ? BatteryWarning
-            : level <= 35
-              ? BatteryLow
-              : level <= 65
-                ? BatteryMedium
-                : BatteryFull;
+        level <= 15 ? BatteryWarning
+        : level <= 35 ? BatteryLow
+        : level <= 65 ? BatteryMedium
+        : BatteryFull;
 
     const cs = isCharging
-        ? {
-              bg: "bg-emerald-50",
-              border: "border-emerald-200",
-              text: "text-emerald-700",
-              icon: "text-emerald-500",
-              dot: "bg-emerald-500",
-          }
+        ? { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", icon: "text-emerald-500", dot: "bg-emerald-500" }
         : isBelowMin
-          ? {
-                bg: "bg-rose-50",
-                border: "border-rose-200",
-                text: "text-rose-700",
-                icon: "text-rose-500",
-                dot: "bg-rose-500",
-            }
+          ? { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700", icon: "text-rose-500", dot: "bg-rose-500" }
           : level <= 35
-            ? {
-                  bg: "bg-amber-50",
-                  border: "border-amber-200",
-                  text: "text-amber-700",
-                  icon: "text-amber-500",
-                  dot: "bg-amber-500",
-              }
-            : {
-                  bg: "bg-slate-50",
-                  border: "border-slate-200",
-                  text: "text-slate-700",
-                  icon: "text-slate-500",
-                  dot: "bg-slate-400",
-              };
+            ? { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700", icon: "text-amber-500", dot: "bg-amber-500" }
+            : { bg: "bg-slate-50", border: "border-slate-200", text: "text-slate-700", icon: "text-slate-500", dot: "bg-slate-400" };
 
     return (
         <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${cs.bg} ${cs.border} ${cs.text}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 ${cs.bg} ${cs.border} ${cs.text}`}
             title={`Min required: ${minimumCharge}%`}
         >
             <div className="relative flex items-center">
@@ -202,16 +127,12 @@ const BatteryIndicator = ({
                     <Icon className={`w-4 h-4 ${cs.icon}`} />
                 )}
                 {isBelowMin && !isCharging && (
-                    <span
-                        className={`absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full ${cs.dot} animate-ping`}
-                    />
+                    <span className={`absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full ${cs.dot} animate-ping`} />
                 )}
             </div>
             <div className="flex flex-col leading-none gap-0.5">
                 <span className="font-bold">{level.toFixed(1)}%</span>
-                <span className="text-[10px] opacity-70">
-                    Min: {minimumCharge}%
-                </span>
+                <span className="text-[10px] opacity-70">Min: {minimumCharge}%</span>
             </div>
         </div>
     );
@@ -223,110 +144,64 @@ const BatteryIndicator = ({
 
 const ConnectionStatus = ({ wsConnected }: { wsConnected: boolean }) => (
     <div
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium ${
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 ${
             wsConnected
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                 : "bg-rose-50 text-rose-700 border-rose-200"
         }`}
     >
-        <div
-            className={`w-2 h-2 rounded-full ${wsConnected ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`}
-        />
+        <div className={`w-2 h-2 rounded-full ${wsConnected ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`} />
         <span>{wsConnected ? "Connected" : "Disconnected"}</span>
     </div>
 );
 
 /* ================================================================
    ROBOT STATUS PANEL
-
-   Behaviour:
-   - Receives `robotStatus` prop from parent (latest WS push).
-   - Whenever a new non-default value arrives the display updates
-     immediately and a 3-second idle timer starts.
-   - If no new event arrives within 3 seconds the display resets
-     to DEFAULT_ROBOT_STATUS (all false / 0).
-   - Fields that transition to `true` blink once for ~600 ms.
    ================================================================ */
 
-const RobotStatusPanel = ({
-    robotStatus: incoming,
-}: {
-    robotStatus: RobotStatus;
-}) => {
-    /* What the UI actually renders */
+const RobotStatusPanel = ({ robotStatus: incoming }: { robotStatus: RobotStatus }) => {
     const [display, setDisplay] = useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
+    const [blinking, setBlinking] = useState<Record<keyof RobotStatus, boolean>>(
+        { break_status: false, emergency_status: false, Arm_moving: false },
+    );
 
-    /* Which fields are currently playing the blink animation */
-    const [blinking, setBlinking] = useState<
-        Record<keyof RobotStatus, boolean>
-    >({
-        break_status: false,
-        emergency_status: false,
-        Arm_moving: false,
-    });
-
-    /* 3-second idle timer that resets display to defaults */
     const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const blinkTimers = useRef<Partial<Record<keyof RobotStatus, ReturnType<typeof setTimeout>>>>({});
 
-    /* Per-field blink-clear timers */
-    const blinkTimers = useRef<
-        Partial<Record<keyof RobotStatus, ReturnType<typeof setTimeout>>>
-    >({});
-
-    /* Stable update callback — same pattern as useWsChannel */
     const applyIncoming = useCallback((next: RobotStatus) => {
-        /* 1. Update display immediately */
         setDisplay(next);
-
-        /* 2. Blink fields that just became true */
-        const fields: (keyof RobotStatus)[] = [
-            "break_status",
-            "emergency_status",
-            "Arm_moving",
-        ];
+        const fields: (keyof RobotStatus)[] = ["break_status", "emergency_status", "Arm_moving"];
         fields.forEach((f) => {
             if (next[f]) {
                 setBlinking((prev) => ({ ...prev, [f]: true }));
-                if (blinkTimers.current[f])
-                    clearTimeout(blinkTimers.current[f]);
+                if (blinkTimers.current[f]) clearTimeout(blinkTimers.current[f]);
                 blinkTimers.current[f] = setTimeout(() => {
                     setBlinking((prev) => ({ ...prev, [f]: false }));
                 }, 600);
             }
         });
-
-        /* 3. (Re)start the 3-second idle reset timer */
         if (resetTimer.current) clearTimeout(resetTimer.current);
         resetTimer.current = setTimeout(() => {
             setDisplay(DEFAULT_ROBOT_STATUS);
         }, ROBOT_STATUS_TIMEOUT_MS);
     }, []);
 
-    /* Fire whenever any field on the incoming prop changes */
     useEffect(() => {
         applyIncoming(incoming);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [incoming.break_status, incoming.emergency_status, incoming.Arm_moving]);
 
-    /* Cleanup on unmount */
     useEffect(() => {
         return () => {
             if (resetTimer.current) clearTimeout(resetTimer.current);
-            const fields: (keyof RobotStatus)[] = [
-                "break_status",
-                "emergency_status",
-                "Arm_moving",
-            ];
-            fields.forEach((f) => {
-                if (blinkTimers.current[f])
-                    clearTimeout(blinkTimers.current[f]);
+            (["break_status", "emergency_status", "Arm_moving"] as (keyof RobotStatus)[]).forEach((f) => {
+                if (blinkTimers.current[f]) clearTimeout(blinkTimers.current[f]);
             });
         };
     }, []);
 
     return (
         <>
-            {/* Blink keyframe — injected once */}
             <style>{`
                 @keyframes status-blink {
                     0%,100% { opacity:1; transform:scale(1);    }
@@ -338,63 +213,45 @@ const RobotStatusPanel = ({
             `}</style>
 
             <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm w-full lg:w-auto">
-                {/* ── Brake ── */}
+                {/* Brake */}
                 <div className="flex items-center gap-2">
-                    <div
-                        className={`relative ${blinking.break_status ? "status-blink" : ""}`}
-                    >
-                        <Disc
-                            className={`w-5 h-5 ${display.break_status ? "text-rose-500" : "text-slate-400"}`}
-                        />
+                    <div className={`relative ${blinking.break_status ? "status-blink" : ""}`}>
+                        <Disc className={`w-5 h-5 transition-colors duration-200 ${display.break_status ? "text-rose-500" : "text-slate-400"}`} />
                         {display.break_status && (
                             <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full animate-ping" />
                         )}
                     </div>
-                    <span
-                        className={`text-xs font-medium ${display.break_status ? "text-rose-600" : "text-slate-500"}`}
-                    >
+                    <span className={`text-xs font-medium transition-colors duration-200 ${display.break_status ? "text-rose-600" : "text-slate-500"}`}>
                         Brake
                     </span>
                 </div>
 
                 <div className="w-px h-6 bg-slate-200" />
 
-                {/* ── Emergency ── */}
+                {/* Emergency */}
                 <div className="flex items-center gap-2">
-                    <div
-                        className={`relative ${blinking.emergency_status ? "status-blink" : ""}`}
-                    >
-                        <AlertCircle
-                            className={`w-5 h-5 ${display.emergency_status ? "text-red-600" : "text-slate-400"}`}
-                        />
+                    <div className={`relative ${blinking.emergency_status ? "status-blink" : ""}`}>
+                        <AlertCircle className={`w-5 h-5 transition-colors duration-200 ${display.emergency_status ? "text-red-600" : "text-slate-400"}`} />
                         {display.emergency_status && (
                             <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-600 rounded-full animate-ping" />
                         )}
                     </div>
-                    <span
-                        className={`text-xs font-medium ${display.emergency_status ? "text-red-700" : "text-slate-500"}`}
-                    >
+                    <span className={`text-xs font-medium transition-colors duration-200 ${display.emergency_status ? "text-red-700" : "text-slate-500"}`}>
                         Emergency
                     </span>
                 </div>
 
                 <div className="w-px h-6 bg-slate-200" />
 
-                {/* ── Arm Moving ── */}
+                {/* Arm Moving */}
                 <div className="flex items-center gap-2">
-                    <div
-                        className={`relative ${blinking.Arm_moving ? "status-blink" : ""}`}
-                    >
-                        <Move
-                            className={`w-5 h-5 ${display.Arm_moving ? "text-blue-500 animate-pulse" : "text-slate-400"}`}
-                        />
+                    <div className={`relative ${blinking.Arm_moving ? "status-blink" : ""}`}>
+                        <Move className={`w-5 h-5 transition-colors duration-200 ${display.Arm_moving ? "text-blue-500 animate-pulse" : "text-slate-400"}`} />
                         {display.Arm_moving && (
                             <span className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping" />
                         )}
                     </div>
-                    <span
-                        className={`text-xs font-medium ${display.Arm_moving ? "text-blue-600" : "text-slate-500"}`}
-                    >
+                    <span className={`text-xs font-medium transition-colors duration-200 ${display.Arm_moving ? "text-blue-600" : "text-slate-500"}`}>
                         Arm Moving
                     </span>
                 </div>
@@ -442,14 +299,143 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
     robotStatus,
     wsConnected,
     time,
-    operationMode,
     onOperationModeUpdated,
+    ws,
 }) => {
     const minimumCharge = robotData?.minimum_battery_charge ?? 20;
 
+    // State driven by the API — never by static props
+    const [operationMode, setOperationMode] = useState<OperationMode | null>(null);
+    const [isLoadingMode, setIsLoadingMode] = useState(false);
+
+    // Track if we've done the initial fetch to avoid duplicate calls
+    const hasFetchedRef = useRef(false);
+
+    /**
+     * Shared fetcher: GET /api/robots/{id}/operation-mode/
+     * Call this once on mount, then only when WS event fires
+     */
+    const fetchOperationMode = useCallback(
+        (robotId: number | string) => {
+            setIsLoadingMode(true);
+            fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/operation-mode/`, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+            })
+                .then((res) => {
+                    if (!res.ok) {
+                        res.text().then((t) =>
+                            console.error(`[operation-mode] API ${res.status}:`, t),
+                        );
+                        return null;
+                    }
+                    return res.json();
+                })
+                .then((result) => {
+                    if (!result) {
+                        setIsLoadingMode(false);
+                        return;
+                    }
+                    
+                    // DEBUG: Log the full response structure
+                    console.log("[operation-mode] Full API response:", result);
+                    
+                    // Try multiple unwrapping paths
+                    let mode: OperationMode | null = null;
+                    
+                    // Path 1: { success: true, data: { operation_mode: { ... } } }
+                    if (result?.data?.operation_mode) {
+                        mode = result.data.operation_mode;
+                        console.log("[operation-mode] Using path: result.data.operation_mode", mode);
+                    }
+                    // Path 2: { operation_mode: { ... } }
+                    else if (result?.operation_mode) {
+                        mode = result.operation_mode;
+                        console.log("[operation-mode] Using path: result.operation_mode", mode);
+                    }
+                    // Path 3: Direct object { mode: "AUTO", ... }
+                    else if (result?.mode) {
+                        mode = result;
+                        console.log("[operation-mode] Using path: direct object", mode);
+                    }
+                    
+                    if (mode) {
+                        console.log("[operation-mode] Setting state to:", mode);
+                        setOperationMode(mode);
+                        onOperationModeUpdated?.(mode);
+                    } else {
+                        console.warn("[operation-mode] Could not extract mode from response:", result);
+                    }
+                    
+                    setIsLoadingMode(false);
+                })
+                .catch((err) => {
+                    console.error("[operation-mode] fetch failed:", err);
+                    setIsLoadingMode(false);
+                });
+        },
+        [onOperationModeUpdated],
+    );
+
+    /**
+     * ── 1. MOUNT: Fetch operation mode once ──
+     * Only calls the API on initial mount when robotData becomes available
+     */
+    useEffect(() => {
+        if (!robotData?.id || hasFetchedRef.current) return;
+
+        hasFetchedRef.current = true;
+        fetchOperationMode(robotData.id);
+    }, [robotData?.id, fetchOperationMode]);
+
+    /**
+     * ── 2. WEBSOCKET: Re-fetch from API only when operation_mode_updated event fires ──
+     * Sets up a listener that triggers API call only on the specific WS event
+     */
+    useEffect(() => {
+        if (!ws) return;
+
+        const handleMessage = (event: MessageEvent) => {
+            let message: {
+                event: string;
+                data?: {
+                    robot_id?: number;
+                    robo_id?: string;
+                    operation_mode?: OperationMode;
+                };
+            };
+
+            try {
+                message = JSON.parse(
+                    typeof event.data === "string" ? event.data : JSON.stringify(event.data),
+                );
+            } catch {
+                return;
+            }
+
+            // Only act on operation_mode_updated events
+            if (message.event !== "operation_mode_updated") return;
+
+            // Get robot_id from WS event, fallback to robotData.id if needed
+            const robotId = message.data?.robot_id || robotData?.id;
+            if (!robotId) {
+                console.warn("[operation-mode] No robot_id in WS event or robotData");
+                return;
+            }
+
+            // Trigger API fetch immediately
+            fetchOperationMode(robotId);
+        };
+
+        ws.addEventListener("message", handleMessage);
+
+        // Cleanup listener on unmount or when ws changes
+        return () => ws.removeEventListener("message", handleMessage);
+    }, [ws, robotData?.id, fetchOperationMode]);
+
     return (
-        <header className="mb-4">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-gray-100 px-3 py-3 rounded-2xl">
+        <header className="mb-3">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-gradient-to-r from-gray-50 to-gray-100 px-3 py-3 rounded-2xl border border-slate-200 shadow-sm transition-all duration-300">
                 {/* Title + Subtitle */}
                 <div>
                     <h1 className="text-2xl md:text-3xl font-semibold tracking-tight flex items-center gap-3">
@@ -463,9 +449,8 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                     </p>
                 </div>
 
-                {/* Right-side controls - Modified for tablet view */}
+                {/* Right-side controls */}
                 <div className="flex flex-col md:flex-row lg:flex-row items-start md:items-center lg:items-center gap-3 md:gap-4 w-full lg:w-auto">
-                    {/* First row on tablet: Connection + Battery + Operation Mode */}
                     <div className="flex flex-row items-center gap-3 w-full md:w-auto">
                         <ConnectionStatus wsConnected={wsConnected} />
                         <BatteryIndicator
@@ -473,10 +458,10 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                             status={battery.status}
                             minimumCharge={minimumCharge}
                         />
-                        <OperationModeButton mode={operationMode} />
+                        <div className={`transition-opacity duration-300 ${isLoadingMode ? "opacity-60" : "opacity-100"}`}>
+                            <OperationModeButton mode={operationMode} />
+                        </div>
                     </div>
-
-                    {/* Second row on tablet: Status + Time */}
                     <div className="flex flex-row items-center justify-between md:justify-start gap-3 md:gap-4 w-full md:w-auto">
                         <RobotStatusPanel robotStatus={robotStatus} />
                         <DateTimeDisplay time={time} />

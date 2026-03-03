@@ -8,69 +8,28 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import RobotDashboardHeader from "../Includes/header";
 
+// ── Import all shared types from single source of truth ──────────
+import type {
+    RobotData,
+    BatteryStatus,
+    RobotStatus,
+    FilterData,
+    Schedule,
+    Pagination,
+} from "../types/robot";
+
+// Re-export so child components can still import from here if needed
+export type { Schedule, Pagination };
+
 /* ================================================================
-   TYPES
+   LOCAL TYPES (not shared)
    ================================================================ */
-
-interface RobotData {
-    id: string;
-    name: string;
-    status: string;
-    robo_id?: string;
-    minimum_battery_charge?: number;
-    [key: string]: unknown;
-}
-
-interface BatteryStatus {
-    level: number;
-    status: "charging" | "discharging" | "full" | "low";
-    timeRemaining: string;
-    voltage?: number;
-    current?: number;
-    power?: number;
-    dod?: number;
-}
-
-interface RobotStatus {
-    break_status: boolean;
-    emergency_status: boolean;
-    Arm_moving: boolean;
-}
 
 interface ScheduleSummary {
     total: number;
     scheduled: number;
     processing: number;
     completed: number;
-}
-
-interface FilterData {
-    filter_type: "day" | "week" | "month" | "range";
-    date: string;
-    start_date: string;
-    end_date: string;
-}
-
-// Shared types — exported so list page can import them
-export interface Schedule {
-    id: number;
-    location: string;
-    scheduled_date: string;
-    scheduled_time: string;
-    end_time: string;
-    is_canceled: boolean;
-    status: "scheduled" | "processing" | "completed";
-    created_at: string;
-    robot: number;
-}
-
-export interface Pagination {
-    current_page: number;
-    total_pages: number;
-    total_records: number;
-    page_size: number;
-    has_next: boolean;
-    has_previous: boolean;
 }
 
 /* ── Defaults ─────────────────────────────────────────────────── */
@@ -202,15 +161,24 @@ function DashboardContent() {
                 if (!response.ok) throw new Error("Failed to fetch robot data");
                 const json = await response.json();
                 if (json.success && json.data) {
-                    const robot: RobotData = json.data;
+                    const raw = json.data;
+
+                    // Normalise: ensure robo_id is always a string (never undefined)
+                    const robot: RobotData = {
+                        ...raw,
+                        robo_id: raw.robo_id ?? "",
+                    };
+
                     setRobotData(robot);
-                    if (typeof robot.battery_level === "number") {
-                        setBattery((prev) => ({
+
+                    if (typeof raw.battery_level === "number") {
+                        setBattery((prev: any) => ({
                             ...prev,
-                            level: robot.battery_level as number,
+                            level: raw.battery_level as number,
                         }));
                     }
-                    if (robot.robo_id) setRoboId(robot.robo_id as string);
+
+                    if (robot.robo_id) setRoboId(robot.robo_id);
                 }
             } catch (error) {
                 console.error("Error fetching robot data:", error);
@@ -245,8 +213,17 @@ function DashboardContent() {
             if (!result.success)
                 throw new Error(result.message || "Failed to fetch schedules");
 
-            // Sort schedules newest first
-            const sorted = [...(result.schedules || [])].sort((a, b) => {
+            // ✅ UPDATED: Sort with "processing" first, then newest first within groups
+            const sorted = [...(result.schedules || [])].sort((a: Schedule, b: Schedule) => {
+                // Priority 1: Processing first (priority 0), then others (priority 1)
+                const priorityA = a.status === 'processing' ? 0 : 1;
+                const priorityB = b.status === 'processing' ? 0 : 1;
+                
+                if (priorityA !== priorityB) {
+                    return priorityA - priorityB;
+                }
+                
+                // Priority 2: Within same status group, newest first
                 const dateA = new Date(
                     `${a.scheduled_date}T${a.scheduled_time}`,
                 ).getTime();
@@ -258,15 +235,15 @@ function DashboardContent() {
 
             setSchedules(sorted);
 
-            // Pagination
             if (result.pagination) setPagination(result.pagination);
 
-            // ── Schedule summary from filter response (replaces old /schedules/ API) ──
             if (result.schedule_summary) {
                 setScheduleSummary(result.schedule_summary);
             }
-        } catch (err: any) {
-            setSchedulesError(err.message || "Failed to load schedules");
+        } catch (err: unknown) {
+            const message =
+                err instanceof Error ? err.message : "Failed to load schedules";
+            setSchedulesError(message);
             setSchedules([]);
         } finally {
             setSchedulesLoading(false);
@@ -324,7 +301,7 @@ function DashboardContent() {
                         }
 
                         if (payload.event === "robot_status") {
-                            setRobotStatus((prev) => ({
+                            setRobotStatus((prev: any) => ({
                                 break_status:
                                     payload.data.break_status ??
                                     prev.break_status,
@@ -336,7 +313,6 @@ function DashboardContent() {
                             }));
                         }
 
-                        // Refresh schedule list on WS schedule events
                         if (
                             payload.event === "schedule_updated" ||
                             payload.event === "schedule_created"
@@ -421,14 +397,12 @@ function DashboardContent() {
             />
 
             <div>
-                {/* ── Stats Grid — sourced from schedule_summary in filter response ── */}
+                {/* ── Stats Grid ── */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
                     <div className="bg-blue-50 rounded-2xl border border-blue-100 p-6 transition-all duration-200 hover:shadow-lg shadow-sm backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading
-                                    ? "..."
-                                    : scheduleSummary.total}
+                                {schedulesLoading ? "..." : scheduleSummary.total}
                             </p>
                             <p className="text-sm text-gray-600 font-medium">
                                 Total Schedule
@@ -439,9 +413,7 @@ function DashboardContent() {
                     <div className="bg-green-50 rounded-2xl shadow-sm border border-green-100 p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading
-                                    ? "..."
-                                    : scheduleSummary.completed}
+                                {schedulesLoading ? "..." : scheduleSummary.completed}
                             </p>
                             <p className="text-sm text-gray-600 font-medium">
                                 Completed
@@ -449,13 +421,10 @@ function DashboardContent() {
                         </div>
                     </div>
 
-                    {/* "scheduled" from API = not yet started = displayed as "Pending" */}
                     <div className="bg-amber-50 rounded-2xl shadow-sm border border-amber-100 p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading
-                                    ? "..."
-                                    : scheduleSummary.scheduled}
+                                {schedulesLoading ? "..." : scheduleSummary.scheduled}
                             </p>
                             <p className="text-sm text-gray-600 font-medium">
                                 Pending
@@ -466,9 +435,7 @@ function DashboardContent() {
                     <div className="bg-blue-50 rounded-2xl shadow-sm border border-gray-200/50 p-6 transition-all duration-200 hover:shadow-lg hover:border-gray-300 backdrop-blur-sm">
                         <div className="flex flex-col">
                             <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading
-                                    ? "..."
-                                    : scheduleSummary.processing}
+                                {schedulesLoading ? "..." : scheduleSummary.processing}
                             </p>
                             <p className="text-sm text-gray-600 font-medium">
                                 Processing

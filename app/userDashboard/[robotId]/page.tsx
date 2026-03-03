@@ -19,10 +19,10 @@ import {
     X,
     Navigation,
     MapPin,
-    Handshake,
     Hand,
 } from "lucide-react";
 import RobotDashboardHeader from "@/app/Includes/header";
+import { useModal } from "../../components/ModalContext";
 
 export interface RobotData {
     id: string;
@@ -163,8 +163,8 @@ function useWsChannel<T>(defaultValue: T) {
         timerRef.current = setTimeout(() => {
             setIsStale(true);
             setValue(defaultValue);
-            // eslint-disable-next-line react-hooks/exhaustive-deps
         }, WS_TIMEOUT_MS);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(
@@ -395,6 +395,14 @@ const LowBatteryWarningPopup = ({
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 const Dashboard: React.FC = () => {
+    // ── Modal ─────────────────────────────────────────────────────────────────
+    const { showModal } = useModal();
+    // Stable ref so the WS closure always calls the latest showModal
+    const showModalRef = useRef(showModal);
+    useEffect(() => {
+        showModalRef.current = showModal;
+    }, [showModal]);
+
     const [robotId, setRobotId] = useState<string>("");
     const [roboId, setRoboId] = useState<string>("");
     const [robotData, setRobotData] = useState<RobotData | null>(null);
@@ -413,7 +421,6 @@ const Dashboard: React.FC = () => {
     });
     const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL;
 
-    // Persist filter to localStorage whenever it changes
     useEffect(() => {
         try {
             localStorage.setItem(
@@ -439,9 +446,6 @@ const Dashboard: React.FC = () => {
     const [showMapNotUploadedPopup, setShowMapNotUploadedPopup] =
         useState(false);
 
-    /**
-     * Apply any navigation API / WebSocket payload to all related state in one shot.
-     */
     const applyNavData = useCallback(
         (data: {
             navigation_mode: "stationary" | "autonomous";
@@ -633,13 +637,11 @@ const Dashboard: React.FC = () => {
             const result = await res.json();
             const opMode = result.operation_mode || result;
             setOperationMode(opMode);
-            console.log("✅ Operation mode fetched:", opMode);
         } catch (err) {
             console.error("❌ Failed to fetch operation mode:", err);
         }
     }, [robotId]);
 
-    // Store fetch function in ref for WebSocket closure
     const fetchOperationModeRef = useRef(fetchOperationMode);
     useEffect(() => {
         fetchOperationModeRef.current = fetchOperationMode;
@@ -659,16 +661,11 @@ const Dashboard: React.FC = () => {
         }
     }, [robotId, applyNavData]);
 
-    /**
-     * Stable ref so the WebSocket onmessage closure always calls the latest
-     * version of refetchNavigation without needing it in the WS useEffect deps.
-     */
     const refetchNavigationRef = useRef(refetchNavigation);
     useEffect(() => {
         refetchNavigationRef.current = refetchNavigation;
     }, [refetchNavigation]);
 
-    // Call on mount / whenever robotId changes
     useEffect(() => {
         refetchNavigation();
     }, [refetchNavigation]);
@@ -811,8 +808,22 @@ const Dashboard: React.FC = () => {
                     try {
                         const payload = JSON.parse(event.data as string);
 
-                        // Store the raw event for operation mode handling
                         setWsEvent(payload);
+
+                        // ── robot_deactivated → show global modal ─────────────
+                        if (payload.event === "robot_unassigned") {
+                            showModalRef.current(
+                                payload.data?.message ??
+                                    `Robot "${robotData?.name ?? roboId}" has been deactivated.`,
+                            );
+                        }
+
+                                                if (payload.event === "robot_deactivated") {
+                            showModalRef.current(
+                                payload.data?.message ??
+                                    `Robot "${robotData?.name ?? roboId}" has been deactivated.`,
+                            );
+                        }
 
                         // ── Map uploaded → refresh locations ──────────────────
                         if (
@@ -919,15 +930,10 @@ const Dashboard: React.FC = () => {
 
                         // ── Operation mode updated → fetch from API ──────────
                         if (payload.event === "operation_mode_updated") {
-                            console.log(
-                                "🔄 operation_mode_updated event received:",
-                                payload.data,
-                            );
                             fetchOperationModeRef.current();
                         }
 
                         // ── Navigation updated / cross-client sync ────────────
-                        // Fire immediately — no gating required.
                         if (
                             payload.event === "navigation_updated" ||
                             payload.event === "navigation_update"
@@ -1062,9 +1068,6 @@ const Dashboard: React.FC = () => {
                 minimumThreshold={robotData?.minimum_battery_charge ?? 20}
             />
 
-            {/* ═══════════════════════════════════════════════════════════════ */}
-            {/* ROBOT DASHBOARD HEADER WITH OPERATION MODE */}
-            {/* ═══════════════════════════════════════════════════════════════ */}
             <RobotDashboardHeader
                 title="Robotic Inspection Dashboard"
                 subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
@@ -1075,12 +1078,11 @@ const Dashboard: React.FC = () => {
                 time={time}
                 operationMode={operationMode}
                 onOperationModeUpdated={(mode) => {
-                    console.log("Operation mode callback:", mode);
                     setOperationMode(mode);
                 }}
             />
 
-            <main className="flex flex-col lg:flex-row gap-6 mt-6">
+            <main className="flex flex-col lg:flex-row gap-6">
                 {/* ── Left column ─────────────────────────────────────────── */}
                 <div className="lg:w-3/5 space-y-6">
                     {/* Defect Analysis */}
@@ -1207,7 +1209,7 @@ const Dashboard: React.FC = () => {
                             )}
                         </div>
 
-                        <div className="mt-6">
+                        <div className="mt-5">
                             <div className="flex flex-col md:flex-row justify-between mb-2 gap-2">
                                 <div>
                                     <h3 className="font-medium">Defect Rate</h3>
@@ -1492,7 +1494,7 @@ const Dashboard: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* ── Navigation mode toggle ── */}
+                            {/* Navigation mode toggle */}
                             <div className="flex items-center justify-center gap-3 mb-3">
                                 <span
                                     className={`text-xs font-semibold transition-colors duration-300 ${!isAutonomous ? "text-slate-800" : "text-slate-400"}`}
@@ -1531,7 +1533,6 @@ const Dashboard: React.FC = () => {
                                 </span>
                             </div>
 
-                            {/* Map not ready warning */}
                             {!isAutonomousReady && (
                                 <div className="flex items-center justify-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1539,7 +1540,6 @@ const Dashboard: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* PATCH error */}
                             {navPatchError && (
                                 <div className="flex items-center gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1553,11 +1553,9 @@ const Dashboard: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Autonomous expanded panel */}
                             <div
                                 className={`overflow-hidden transition-all duration-300 ease-in-out ${isAutonomous ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}
                             >
-                                {/* Navigation style selector */}
                                 <div className="flex gap-2 mb-4">
                                     {(
                                         [
@@ -1602,7 +1600,6 @@ const Dashboard: React.FC = () => {
                                     })}
                                 </div>
 
-                                {/* Locations list */}
                                 <div className="flex items-center justify-between mb-2">
                                     <h3 className="font-medium text-slate-800 text-sm">
                                         Recent Locations
@@ -1614,7 +1611,7 @@ const Dashboard: React.FC = () => {
                                     )}
                                 </div>
 
-                                <div className="space-y-2 h-44 overflow-y-auto">
+                                <div className="space-y-2 h-44 overflow-y-auto scroll-hide">
                                     {locationLoading ? (
                                         <div className="flex flex-col items-center justify-center h-full py-6 text-slate-400">
                                             <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-400" />
@@ -1650,7 +1647,6 @@ const Dashboard: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Stationary placeholder */}
                             {!isAutonomous && (
                                 <div className="flex flex-col items-center justify-center py-10 text-slate-400">
                                     <Navigation className="w-10 h-10 mx-auto mb-2 opacity-25" />
@@ -1753,9 +1749,7 @@ const Dashboard: React.FC = () => {
                             })}
                         </div>
 
-                        {/* Arm / CAN status */}
                         <div className="grid grid-cols-2 gap-2 mt-3">
-                            {/* Header row */}
                             <div className="col-span-2 flex items-center gap-2 mb-1">
                                 <Hand
                                     className="text-violet-500/80"
@@ -1766,7 +1760,6 @@ const Dashboard: React.FC = () => {
                                 </span>
                             </div>
 
-                            {/* CAN status cards */}
                             {(["can0", "can1"] as const).map((can) => (
                                 <div
                                     key={can}

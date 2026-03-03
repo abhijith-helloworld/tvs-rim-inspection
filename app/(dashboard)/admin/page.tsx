@@ -220,7 +220,7 @@ export default function RobotManagementPage() {
 
         try {
             const res = await fetchWithAuth(
-                `${ROBOT_API}${confirmModal.robotId}/?force=true`,
+                `${ROBOT_API}${confirmModal.robotId}/`,
                 {
                     method: "DELETE",
                 },
@@ -228,7 +228,7 @@ export default function RobotManagementPage() {
 
             if (!res.ok) throw new Error();
 
-            showSuccess("Robot deleted successfully");
+            showSuccess("Robot deactivate successfully");
 
             // Close modal immediately after successful deletion
             setConfirmModal({ isOpen: false, robotId: null, robotName: "" });
@@ -434,9 +434,9 @@ export default function RobotManagementPage() {
 
             <ConfirmModal
                 isOpen={confirmModal.isOpen}
-                title="Delete Robot"
-                message={`Are you sure you want to delete "${confirmModal.robotName}"? This action cannot be undone.`}
-                confirmText="Delete"
+                title="Deactivate Robot"
+                message={`Are you sure you want to Deactivate "${confirmModal.robotName}"? This action cannot be undone.`}
+                confirmText="Deactivate"
                 cancelText="Cancel"
                 onConfirm={handleDeleteConfirm}
                 onCancel={handleDeleteCancel}

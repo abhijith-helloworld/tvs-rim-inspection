@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ModalProvider } from "./components/ModalContext";
+import GlobalModal from "./components/GlobalModal";
+import GlobalWebSocket from "./components/GlobalWebSocket";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,8 +27,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {children}
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        <ModalProvider>
+          <GlobalWebSocket />
+          <GlobalModal />
+          {children}
+        </ModalProvider>
       </body>
     </html>
   );

@@ -9,6 +9,7 @@ export interface AuthTokens {
 }
 
 export interface UserData {
+  user_id: number;
   username: string;
   email: string;
   role: "USER" | "ADMIN";
@@ -95,7 +96,7 @@ export const tokenStorage = {
     // ⭐ Fallback: reconstruct from cookies (mobile-auth flow)
     const role = Cookies.get("role") as "USER" | "ADMIN" | undefined;
     if (role) {
-      return { username: "", email: "", role };
+      return { user_id: 0, username: "", email: "", role };
     }
 
     return null;
@@ -118,6 +119,20 @@ export const tokenStorage = {
     return roleCookie || null;
   },
 
+  getUserId(): number | null {
+    if (typeof window === "undefined") return null;
+
+    const localData = localStorage.getItem("userData");
+    if (localData) {
+      try {
+        const parsed = JSON.parse(localData);
+        if (parsed?.user_id) return parsed.user_id;
+      } catch {}
+    }
+
+    return null;
+  },
+
   /**
    * ⭐ Syncs cookie-based tokens into localStorage.
    * Called automatically in your admin/userDashboard layout.
@@ -135,6 +150,7 @@ export const tokenStorage = {
 
     if (cookieRole && !localStorage.getItem("userData")) {
       const minimal: UserData = {
+        user_id: 0,
         username: "",
         email: "",
         role: cookieRole,
@@ -310,8 +326,9 @@ export const login = async (
       refresh: data.refresh,
     });
 
-    // ⭐ Store user data + role
+    // ⭐ Store user data + role + user_id
     const userData: UserData = {
+      user_id: data.user_id,
       username: data.username,
       email: data.email,
       role: data.role || "USER",

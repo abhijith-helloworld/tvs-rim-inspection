@@ -14,19 +14,11 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { API_BASE_URL, fetchWithAuth } from "@/app/lib/auth";
 import RobotDashboardHeader from "@/app/Includes/header";
+import { RobotData } from "@/app/types/robot";
 
 /* ================================================================
    TYPES
    ================================================================ */
-
-interface RobotData {
-    id: string;
-    name: string;
-    status: string;
-    robo_id?: string;
-    minimum_battery_charge?: number;
-    [key: string]: unknown;
-}
 
 interface BatteryStatus {
     level: number;
@@ -44,7 +36,6 @@ interface RobotStatus {
     Arm_moving: boolean;
 }
 
-/* ── Defaults ── */
 const DEFAULT_BATTERY: BatteryStatus = {
     level: 0,
     status: "discharging",
@@ -58,38 +49,25 @@ const DEFAULT_ROBOT_STATUS: RobotStatus = {
 };
 
 /* ================================================================
-   DETAIL CARD
+   DETAIL BADGE — compact inline badge replacing the old tall card
    ================================================================ */
-interface DetailCardProps {
+interface DetailBadgeProps {
     label: string;
     value: string;
-    icon: React.ReactNode;
     status: "success" | "error" | "warning" | "neutral";
 }
 
-const DetailCard = ({ label, value, icon, status }: DetailCardProps) => {
-    const statusColors = {
-        success: "bg-emerald-50 border-emerald-200",
-        error:   "bg-red-50 border-red-200",
-        warning: "bg-amber-50 border-amber-200",
-        neutral: "bg-gray-50 border-gray-200",
+const DetailBadge = ({ label, value, status }: DetailBadgeProps) => {
+    const colors = {
+        success: "bg-emerald-50 border-emerald-200 text-emerald-700",
+        error:   "bg-red-50 border-red-200 text-red-700",
+        warning: "bg-amber-50 border-amber-200 text-amber-700",
+        neutral: "bg-gray-50 border-gray-200 text-gray-600",
     };
-    const textColors = {
-        success: "text-emerald-700",
-        error:   "text-red-700",
-        warning: "text-amber-700",
-        neutral: "text-gray-700",
-    };
-
     return (
-        <div className={`p-5 rounded-xl border ${statusColors[status]} bg-white shadow-sm`}>
-            <div className="flex items-center gap-3 mb-2">
-                <div className={`p-2 rounded-lg ${statusColors[status].split(" ")[0]}`}>
-                    {icon}
-                </div>
-                <span className="text-sm text-gray-500">{label}</span>
-            </div>
-            <p className={`text-lg font-semibold ${textColors[status]}`}>{value}</p>
+        <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${colors[status]}`}>
+            <span className="text-xs font-medium text-gray-500">{label}</span>
+            <span className={`text-xs font-bold ${colors[status].split(" ")[2]}`}>{value}</span>
         </div>
     );
 };
@@ -102,7 +80,6 @@ export default function InspectionDetailPage() {
     const router       = useRouter();
     const searchParams = useSearchParams();
 
-    // ✅ Both params are forwarded from InspectionsBySchedule
     const robotId    = searchParams.get("robot_id")    ?? "";
     const scheduleId = searchParams.get("schedule_id") ?? "";
 
@@ -113,6 +90,7 @@ export default function InspectionDetailPage() {
     const [verifyLoading,   setVerifyLoading]   = useState(false);
     const [userDescription, setUserDescription] = useState("");
     const [correctLabel,    setCorrectLabel]    = useState("");
+    const [isApproved,      setIsApproved]      = useState(false);
     const [showVerifyPopup, setShowVerifyPopup] = useState(false);
 
     /* ── robot / header state ── */
@@ -123,7 +101,7 @@ export default function InspectionDetailPage() {
     const [wsConnected, setWsConnected] = useState<boolean>(false);
     const [time,        setTime]        = useState<string>(new Date().toLocaleTimeString());
 
-    const wsRef = useRef<WebSocket | null>(null);
+    const wsRef  = useRef<WebSocket | null>(null);
     const WS_URL = process.env.NEXT_PUBLIC_WS_URL;
 
     /* ── Clock ── */
@@ -135,7 +113,6 @@ export default function InspectionDetailPage() {
     /* ── Fetch robot data ── */
     useEffect(() => {
         if (!robotId) return;
-
         const fetchRobotData = async () => {
             try {
                 const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/`);
@@ -144,19 +121,16 @@ export default function InspectionDetailPage() {
                 if (json.success && json.data) {
                     const robot: RobotData = json.data;
                     setRobotData(robot);
-                    // ✅ roboId triggers the WS useEffect below
                     if (robot.robo_id) setRoboId(robot.robo_id as string);
                 }
             } catch (err) {
                 console.error("Failed to fetch robot data:", err);
             }
         };
-
         fetchRobotData();
     }, [robotId]);
 
     /* ── WebSocket for live battery + robot status ── */
-    // ✅ Runs as soon as roboId is set (which happens after robot fetch succeeds)
     useEffect(() => {
         if (!roboId) return;
 
@@ -246,6 +220,7 @@ export default function InspectionDetailPage() {
             }
             const data = await res.json();
             setInspection(data.inspection);
+            setIsApproved(data.inspection?.is_approved ?? false);
         } catch (error: any) {
             toast.error(error.message || "Session expired. Please login again.");
             router.push("/login");
@@ -264,7 +239,7 @@ export default function InspectionDetailPage() {
             setVerifyLoading(true);
 
             const payload = {
-                is_approved:      true,
+                is_approved:      isApproved,
                 false_detected:   falseDetectedValue,
                 user_description: falseDetectedValue ? userDescription : "",
                 correct_label:    falseDetectedValue ? correctLabel    : "",
@@ -338,12 +313,34 @@ export default function InspectionDetailPage() {
 
     const inspectedDate     = new Date(inspection.inspected_at);
     const isAlreadyVerified = inspection.is_human_verified;
+    const isFalseDetected   = inspection.false_detected;
 
     /* ================================================================
-       RENDER
+       RENDER — single-screen, no outer scroll
        ================================================================ */
+
+    /* Shared panel style — every column card uses this */
+    const panel = "bg-white rounded-2xl border border-gray-200/50 shadow-sm";
+    /* Shared section header */
+    const SectionHeader = ({
+        icon,
+        iconBg,
+        title,
+    }: {
+        icon: React.ReactNode;
+        iconBg: string;
+        title: string;
+    }) => (
+        <div className="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100">
+            <div className={`p-1.5 rounded-lg ${iconBg}`}>{icon}</div>
+            <h2 className="text-sm font-bold text-gray-800">{title}</h2>
+        </div>
+    );
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 p-6 via-white to-gray-50/30">
+        <div className="h-screen flex flex-col overflow-hidden bg-gray-50">
+
+            {/* ── Header ── */}
             <RobotDashboardHeader
                 title="Robotic Inspection Dashboard"
                 subtitle={`Robot: ${robotData?.name ?? "N/A"}`}
@@ -354,200 +351,81 @@ export default function InspectionDetailPage() {
                 time={time}
             />
 
-            <div className=" space-y-6">
-
-                {/* ✅ Back navigation — preserves robot_id and schedule_id in the URL
-                    so InspectionsBySchedule can restore its state correctly */}
+            {/* ── Sub-header ── */}
+            <div className="px-5 py-2 flex items-center gap-3 shrink-0">
                 <button
-                    onClick={() =>
-                        router.push(
-                            `/inspections?schedule_id=${scheduleId}&robot_id=${robotId}`
-                        )
-                    }
-                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-teal-600 transition-colors font-medium"
+                    onClick={() => router.push(`/inspections?schedule_id=${scheduleId}&robot_id=${robotId}`)}
+                    className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-teal-600 transition-colors font-medium"
                 >
                     <ArrowLeft className="w-4 h-4" />
                     Back to Inspections
                 </button>
 
-                {/* Already verified banner */}
                 {isAlreadyVerified && (
-                    <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-2xl p-6 shadow-sm">
-                        <div className="flex items-center gap-4">
-                            <div className="p-3 bg-teal-100 rounded-lg">
-                                <CheckCircle className="w-6 h-6 text-teal-600" />
-                            </div>
-                            <div>
-                                <p className="text-teal-900 font-semibold">✓ Verified Inspection</p>
-                                <p className="text-teal-700 text-sm mt-1">
-                                    This inspection has already been human verified and processed.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+                    <span className="flex items-center gap-1.5 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-semibold px-3 py-1 rounded-full">
+                        <CheckCircle className="w-3.5 h-3.5" />
+                        Verified Inspection
+                    </span>
                 )}
+            </div>
 
-                {/* Main content grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* ── 1 large left + 2 stacked right layout ── */}
+            <div className="flex-1 min-h-0 flex gap-4 p-4">
 
-                    {/* ── LEFT COLUMN ── */}
-                    <div className="space-y-6">
-                        {/* Image section */}
-                        <div className="bg-white rounded-2xl border border-gray-200/50 overflow-hidden shadow-lg">
-                            <div className="relative h-[400px] bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-                                <img
-                                    src={inspection.image}
-                                    alt="Inspection image"
-                                    className="w-full h-full object-contain p-4"
-                                />
-                                {/* <div
-                                    className={`absolute top-6 right-6 px-4 py-2.5 rounded-full font-bold shadow-lg text-white ${
-                                        inspection.is_defect
-                                            ? "bg-gradient-to-r from-red-600 to-red-500"
-                                            : "bg-gradient-to-r from-emerald-600 to-emerald-500"
-                                    }`}
-                                >
-                                    {inspection.is_defect ? "⚠ DEFECT" : "✓ NO DEFECT"}
-                                </div> */}
-                            </div>
-
-                            <div className="p-6 border-t border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                    <div>
-                                        <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">
-                                            Inspected Date
-                                        </p>
-                                        <p className="font-bold text-gray-900 text-lg mt-2">
-                                            {inspectedDate.toLocaleDateString("en-US", {
-                                                weekday: "long",
-                                                year: "numeric",
-                                                month: "long",
-                                                day: "numeric",
-                                            })}
-                                        </p>
-                                        <p className="text-gray-600 text-sm">
-                                            at{" "}
-                                            {inspectedDate.toLocaleTimeString("en-US", {
-                                                hour: "2-digit",
-                                                minute: "2-digit",
-                                            })}
-                                        </p>
-                                    </div>
-                                    <div className="bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200 px-5 py-3 rounded-xl shadow-sm">
-                                        <span className="text-teal-600 text-xs font-bold uppercase">Rim ID</span>
-                                        <p className="text-teal-900 font-bold text-lg mt-1">
-                                            #{inspection.rim_id}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
+                {/* ══ LEFT: Image (takes up half the width) ══ */}
+                <div className={`${panel} flex flex-col overflow-hidden w-1/2 shrink-0`}>
+                    <SectionHeader
+                        icon={<TrendingUp className="w-3.5 h-3.5 text-blue-600" />}
+                        iconBg="bg-blue-50"
+                        title="Inspection Image"
+                    />
+                    <div className="flex-1 min-h-0 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center overflow-hidden">
+                        <img
+                            src={inspection.image}
+                            alt="Inspection image"
+                            className="w-full h-full object-contain p-4"
+                        />
+                    </div>
+                    <div className="px-4 py-3 border-t border-gray-100 bg-white shrink-0 flex items-center justify-between gap-3">
+                        <div>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Inspected</p>
+                            <p className="font-semibold text-gray-800 text-sm leading-tight mt-0.5">
+                                {inspectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
+                            </p>
+                            <p className="text-gray-400 text-xs mt-0.5">
+                                {inspectedDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                            </p>
                         </div>
-
-                        {/* Quality Control */}
-                        <div className="bg-white rounded-2xl border border-gray-200/50 p-6 shadow-lg">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="p-3 bg-blue-50 rounded-lg">
-                                    <TrendingUp className="w-5 h-5 text-blue-600" />
-                                </div>
-                                <h2 className="text-xl font-bold text-gray-900">Quality Control</h2>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <DetailCard
-                                    label="AI Detection"
-                                    value={inspection.is_defect ? "Defect" : "No Defect"}
-                                    icon={<TrendingUp size={16} />}
-                                    status={inspection.is_defect ? "error" : "success"}
-                                />
-                                <DetailCard
-                                    label="False Detection"
-                                    value={inspection.false_detected ? "Yes" : "No"}
-                                    icon={<AlertCircle size={16} />}
-                                    status={inspection.false_detected ? "warning" : "neutral"}
-                                />
-                                <DetailCard
-                                    label="Human Verified"
-                                    value={inspection.is_human_verified ? "Yes" : "No"}
-                                    icon={<CheckCircle size={16} />}
-                                    status={inspection.is_human_verified ? "success" : "neutral"}
-                                />
-                                <DetailCard
-                                    label="Approved"
-                                    value={inspection.is_approved ? "Yes" : "No"}
-                                    icon={<CheckCircle size={16} />}
-                                    status={inspection.is_approved ? "success" : "neutral"}
-                                />
-                            </div>
+                        <div className="bg-teal-50 border border-teal-200 px-3 py-2 rounded-xl text-right shrink-0">
+                            <p className="text-teal-500 text-[10px] font-bold uppercase tracking-widest">Rim ID</p>
+                            <p className="text-teal-800 font-bold text-sm mt-0.5">#{inspection.rim_id}</p>
                         </div>
                     </div>
+                </div>
 
-                    {/* ── RIGHT COLUMN ── */}
-                    <div className="space-y-6">
-                        {/* False Detection Details */}
-                        {inspection.false_detected && (
-                            <div className="bg-white rounded-2xl border border-gray-200/50 p-6 shadow-lg">
-                                <div className="flex items-center gap-3 mb-6">
-                                    <div className="p-3 bg-amber-50 rounded-lg">
-                                        <AlertCircle className="w-5 h-5 text-amber-600" />
-                                    </div>
-                                    <h2 className="text-xl font-bold text-gray-900">False Detection Details</h2>
-                                </div>
-                                <div className="space-y-4">
-                                    {inspection.correct_label && (
-                                        <div className="space-y-2">
-                                            <p className="text-sm font-medium text-gray-600">Correct Label</p>
-                                            <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-xl">
-                                                <p className="text-amber-900 font-semibold">{inspection.correct_label}</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                    {inspection.user_description && (
-                                        <div className="space-y-2">
-                                            <p className="text-sm font-medium text-gray-600">Description</p>
-                                            <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-xl">
-                                                <p className="text-amber-900">{inspection.user_description}</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+                {/* ══ RIGHT: two stacked panels ══ */}
+                <div className="flex-1 flex flex-col gap-4 min-h-0">
 
-                        {/* Additional description */}
-                        {inspection.description && (
-                            <div className="bg-white rounded-2xl border border-gray-200/50 shadow-lg p-6">
-                                <div className="flex items-center gap-4 mb-5">
-                                    <div className="p-3 bg-gray-100 rounded-lg">
-                                        <ClipboardCheck className="w-5 h-5 text-gray-600" />
-                                    </div>
-                                    <h3 className="text-lg font-bold text-gray-900">Description</h3>
-                                </div>
-                                <div className="p-4 bg-gray-50/50 border border-gray-200 rounded-xl">
-                                    <p className="text-gray-700 leading-relaxed">{inspection.description}</p>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Verification Actions */}
-                        {!isAlreadyVerified && (
-                            <div className="bg-white border border-gray-200/50 rounded-2xl p-6 shadow-lg">
-                                <div className="flex items-center gap-3 mb-6">
-                                    <div className="p-3 bg-emerald-50 rounded-lg">
-                                        <CheckCircle className="w-5 h-5 text-emerald-600" />
-                                    </div>
-                                    <h2 className="text-xl font-bold text-gray-900">Verification Actions</h2>
-                                </div>
-
-                                <div className="space-y-4">
+                    {/* ── TOP RIGHT: Verification Actions (30%) ── */}
+                    <div className={`${panel} flex flex-col overflow-hidden min-h-0`} style={{ flex: "2 1 0" }}>
+                        <SectionHeader
+                            icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
+                            iconBg="bg-emerald-50"
+                            title="Verification Actions"
+                        />
+                        <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col gap-3">
+                            {!isAlreadyVerified ? (
+                                <>
                                     {/* Verify button */}
                                     <button
                                         onClick={() => setShowVerifyPopup(true)}
                                         disabled={verifyLoading}
-                                        className="w-full py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 disabled:from-gray-400 disabled:to-gray-400 text-white rounded-xl font-bold transition-all duration-200 shadow-sm hover:shadow disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        className="w-full py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 disabled:from-gray-300 disabled:to-gray-300 text-white rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow disabled:cursor-not-allowed flex items-center justify-center gap-2 shrink-0"
                                     >
                                         {verifyLoading ? (
-                                            <><Loader2 className="animate-spin" size={20} /> Processing...</>
+                                            <><Loader2 className="animate-spin" size={15} /> Processing...</>
                                         ) : (
-                                            <><CheckCircle size={20} /> Verify Inspection</>
+                                            <><CheckCircle size={15} /> Verify Inspection</>
                                         )}
                                     </button>
 
@@ -555,70 +433,180 @@ export default function InspectionDetailPage() {
                                     <button
                                         onClick={() => setShowFalseForm(!showFalseForm)}
                                         disabled={verifyLoading}
-                                        className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-600 hover:to-amber-500 disabled:from-gray-400 disabled:to-gray-400 text-white rounded-xl font-bold transition-all duration-200 shadow-sm hover:shadow disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        className={`w-full py-3 text-white rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow disabled:cursor-not-allowed flex items-center justify-center gap-2 relative shrink-0
+                                            ${isFalseDetected
+                                                ? "bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600"
+                                                : "bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-600 hover:to-amber-500"
+                                            } disabled:from-gray-300 disabled:to-gray-300`}
                                     >
-                                        <AlertCircle size={20} />
+                                        <AlertCircle size={15} />
                                         {showFalseForm ? "Cancel" : "Mark as False Detection"}
+                                        {isFalseDetected && !showFalseForm && (
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white/20 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full border border-white/30">
+                                                <CheckCircle size={10} /> Marked
+                                            </span>
+                                        )}
                                     </button>
+                                </>
+                            ) : (
+                                <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-100">
+                                    <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center shrink-0">
+                                        <CheckCircle className="w-5 h-5 text-teal-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-teal-900 font-bold text-sm">Inspection Verified</p>
+                                        <p className="text-teal-600 text-xs mt-0.5">Human verified and processed successfully.</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
 
-                                    {/* False detection form */}
-                                    {showFalseForm && (
-                                        <div className="space-y-4 border border-amber-200 p-5 rounded-xl bg-amber-50/50">
-                                            <div className="flex items-center gap-2">
-                                                <AlertCircle className="text-amber-600" size={18} />
-                                                <p className="text-amber-900 font-medium">
-                                                    Provide details about the false detection:
+                    {/* ── BOTTOM RIGHT: Quality Control + Details (70%) ── */}
+                    <div className={`${panel} flex flex-col overflow-hidden min-h-0`} style={{ flex: "7 1 0" }}>
+                        <SectionHeader
+                            icon={<TrendingUp className="w-3.5 h-3.5 text-blue-600" />}
+                            iconBg="bg-blue-50"
+                            title="Quality Control"
+                        />
+                        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+
+                            {/* Status badges */}
+                            <div className="grid grid-cols-2 gap-2">
+                                <DetailBadge
+                                    label="AI Detection"
+                                    value={inspection.is_defect ? "Defect" : "No Defect"}
+                                    status={inspection.is_defect ? "error" : "success"}
+                                />
+                                <DetailBadge
+                                    label="False Detection"
+                                    value={inspection.false_detected ? "Yes" : "No"}
+                                    status={inspection.false_detected ? "warning" : "neutral"}
+                                />
+                                <DetailBadge
+                                    label="Human Verified"
+                                    value={inspection.is_human_verified ? "Yes" : "No"}
+                                    status={inspection.is_human_verified ? "success" : "neutral"}
+                                />
+                                <DetailBadge
+                                    label="Approved"
+                                    value={inspection.is_approved ? "Yes" : "No"}
+                                    status={inspection.is_approved ? "success" : "neutral"}
+                                />
+                            </div>
+
+                            {/* False Detection Details */}
+                            {inspection.false_detected && (
+                                <div className="rounded-xl border border-amber-200 overflow-hidden">
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200">
+                                        <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                                        <span className="text-xs font-bold text-amber-800">False Detection Details</span>
+                                    </div>
+                                    <div className="p-3 space-y-2 bg-white">
+                                        {inspection.correct_label && (
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Correct Label</p>
+                                                <p className="text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                                                    {inspection.correct_label}
                                                 </p>
                                             </div>
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                                                        Correct Label
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="e.g., No Defect, Scratch, Dent..."
-                                                        value={correctLabel}
-                                                        onChange={(e) => setCorrectLabel(e.target.value)}
-                                                        className="w-full border border-amber-300 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                                                        Description
-                                                    </label>
-                                                    <textarea
-                                                        placeholder="Explain why this is a false detection..."
-                                                        value={userDescription}
-                                                        onChange={(e) => setUserDescription(e.target.value)}
-                                                        className="w-full border border-amber-300 px-4 py-3 rounded-lg h-32 resize-none focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all"
-                                                    />
-                                                </div>
-                                                <button
-                                                    onClick={() => {
-                                                        if (!correctLabel.trim() || !userDescription.trim()) {
-                                                            toast.error("Please fill in all fields");
-                                                            return;
-                                                        }
-                                                        handleVerify(true);
-                                                    }}
-                                                    disabled={verifyLoading}
-                                                    className="w-full py-4 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 disabled:from-gray-400 disabled:to-gray-400 text-white rounded-xl font-bold transition-all duration-200 shadow-sm hover:shadow disabled:shadow-none flex items-center justify-center gap-2"
-                                                >
-                                                    {verifyLoading ? (
-                                                        <><Loader2 className="animate-spin" size={20} /> Submitting...</>
-                                                    ) : (
-                                                        <><AlertCircle size={20} /> Submit False Detection</>
-                                                    )}
-                                                </button>
+                                        )}
+                                        {inspection.user_description && (
+                                            <div>
+                                                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Description</p>
+                                                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                                                    {inspection.user_description}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* False detection form (shown when toggled) */}
+                            {showFalseForm && (
+                                <div className="rounded-xl border border-amber-200 bg-amber-50/40 overflow-hidden flex flex-col">
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200 shrink-0">
+                                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                        <p className="text-xs font-bold text-amber-800">False Detection Form</p>
+                                    </div>
+                                    <div className="p-3 space-y-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-600 mb-1">Correct Label</label>
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., No Defect, Scratch, Dent..."
+                                                value={correctLabel}
+                                                onChange={(e) => setCorrectLabel(e.target.value)}
+                                                className="w-full border border-amber-300 bg-white px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-gray-600 mb-1">Description</label>
+                                            <textarea
+                                                placeholder="Explain why this is a false detection..."
+                                                value={userDescription}
+                                                onChange={(e) => setUserDescription(e.target.value)}
+                                                className="w-full border border-amber-300 bg-white px-3 py-2 rounded-lg text-sm h-20 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all"
+                                            />
+                                        </div>
+                                        {/* is_approved checkbox */}
+                                        <div
+                                            onClick={() => setIsApproved((prev) => !prev)}
+                                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer select-none transition-all
+                                                ${isApproved ? "bg-emerald-50 border-emerald-300" : "bg-white border-gray-200 hover:border-emerald-200"}`}
+                                        >
+                                            <div className={`w-4 h-4 rounded flex items-center justify-center border-2 shrink-0 transition-all
+                                                ${isApproved ? "bg-emerald-500 border-emerald-500" : "border-gray-300 bg-white"}`}
+                                            >
+                                                {isApproved && (
+                                                    <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 12 12" fill="none">
+                                                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <p className={`text-xs font-semibold ${isApproved ? "text-emerald-700" : "text-gray-700"}`}>Mark as Approved</p>
+                                                <p className="text-[10px] text-gray-400 mt-0.5">Approve this inspection in the report</p>
                                             </div>
                                         </div>
-                                    )}
+                                        <button
+                                            onClick={() => {
+                                                if (!correctLabel.trim() || !userDescription.trim()) {
+                                                    toast.error("Please fill in all fields");
+                                                    return;
+                                                }
+                                                handleVerify(true);
+                                            }}
+                                            disabled={verifyLoading}
+                                            className="w-full py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-700 hover:to-red-600 disabled:from-gray-300 disabled:to-gray-300 text-white rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                        >
+                                            {verifyLoading ? (
+                                                <><Loader2 className="animate-spin" size={15} /> Submitting...</>
+                                            ) : (
+                                                <><AlertCircle size={15} /> Submit False Detection</>
+                                            )}
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
+
+                            {/* Description */}
+                            {inspection.description && (
+                                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200">
+                                        <ClipboardCheck className="w-3.5 h-3.5 text-gray-500" />
+                                        <span className="text-xs font-bold text-gray-600">Description</span>
+                                    </div>
+                                    <div className="p-3 bg-white">
+                                        <p className="text-sm text-gray-600 leading-relaxed">{inspection.description}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
+
+                </div>{/* end right stack */}
             </div>
 
             {/* ── Confirm Verify Modal ── */}

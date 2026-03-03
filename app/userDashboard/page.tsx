@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { fetchWithAuth, API_BASE_URL, tokenStorage } from "../lib/auth";
+import { useModal } from "../components/ModalContext";
 
 interface InspectionSummary {
     total: number;
@@ -130,6 +131,13 @@ interface DashboardData {
 }
 
 const Dashboard: React.FC = () => {
+    const { showModal } = useModal();
+    // Keep showModal stable inside ws closures via a ref
+    const showModalRef = useRef(showModal);
+    useEffect(() => {
+        showModalRef.current = showModal;
+    }, [showModal]);
+
     const [data, setData] = useState<DashboardData>({
         defects: {
             totalDetected: 0,
@@ -158,15 +166,14 @@ const Dashboard: React.FC = () => {
     const [selectedRobotId, setSelectedRobotId] = useState<number | null>(null);
     const router = useRouter();
     const websocketsRef = useRef<Map<string, WebSocket>>(new Map());
+    const robotsWsRef = useRef<WebSocket | null>(null);
 
-    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL
+    const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL;
 
     const handleRobotClick = (robotId: number) => {
-        // If clicking the same robot, navigate to detail page
         if (selectedRobotId === robotId) {
             router.push(`/userDashboard/${robotId}`);
         } else {
-            // Otherwise, select the robot and update inspection summary
             setSelectedRobotId(robotId);
 
             const selectedRobot = robots.find((r) => r.id === robotId);
@@ -189,19 +196,16 @@ const Dashboard: React.FC = () => {
 
     const [time, setTime] = useState<string>(new Date().toLocaleTimeString());
 
-    // Calculate defect rate
     const defectRate =
         data.defects.totalScanned > 0
             ? (data.defects.totalDetected / data.defects.totalScanned) * 100
             : 0;
 
-    // Determine which defect is higher
     const higherDefect =
         data.defects.criticalDefects > data.defects.minorDefects
             ? "Critical"
             : "Minor";
 
-    // Update time every second
     useEffect(() => {
         const interval = setInterval(() => {
             setTime(new Date().toLocaleTimeString());
@@ -209,7 +213,6 @@ const Dashboard: React.FC = () => {
         return () => clearInterval(interval);
     }, []);
 
-    // Helper function to format working hours to uptime string
     const formatUptimeString = (workingHours: number): string => {
         const hours = Math.floor(workingHours);
         const decimalPart = workingHours - hours;
@@ -221,7 +224,7 @@ const Dashboard: React.FC = () => {
         return `${hours}h ${minutes}m`;
     };
 
-    // Setup WebSocket for a robot
+    // ── Setup WebSocket for a single robot (ws/robot_message/${roboId}/) ──────
     const setupWebSocket = (robot: Robot) => {
         if (!robot.robo_id) {
             console.warn(
@@ -232,7 +235,6 @@ const Dashboard: React.FC = () => {
 
         const roboId = robot.robo_id;
 
-        // Close existing connection if any
         if (websocketsRef.current.has(roboId)) {
             websocketsRef.current.get(roboId)?.close();
         }
@@ -246,7 +248,6 @@ const Dashboard: React.FC = () => {
                 const ws = new WebSocket(wsUrl);
                 websocketsRef.current.set(roboId, ws);
 
-                // Update status to connecting
                 setWsStatus((prev) => new Map(prev).set(roboId, "connecting"));
 
                 ws.onopen = () => {
@@ -259,7 +260,15 @@ const Dashboard: React.FC = () => {
                     try {
                         const payload = JSON.parse(event.data);
 
-                        // Handle battery_information event only
+                        // ── robot_deactivated → show global modal ─────────────
+                        if (payload.event === "robot_deactivated") {
+                            showModalRef.current(
+                                payload.data?.message ??
+                                    `Robot "${robot.name}" has been deactivated.`,
+                            );
+                        }
+
+                        // ── battery_information ───────────────────────────────
                         if (payload.event === "battery_information") {
                             const soc = Number(payload.data?.soc) || 0;
                             const current = Number(payload.data?.current) || 0;
@@ -273,7 +282,6 @@ const Dashboard: React.FC = () => {
                             const sequence =
                                 Number(payload.data?.sequence) || 0;
 
-                            // Format working_hours to uptime string
                             const uptimeStr = formatUptimeString(working_hours);
 
                             setRobots((prevRobots) =>
@@ -313,7 +321,7 @@ const Dashboard: React.FC = () => {
                     );
                 };
 
-                ws.onclose = (event) => {
+                ws.onclose = () => {
                     setWsStatus((prev) =>
                         new Map(prev).set(roboId, "disconnected"),
                     );
@@ -336,7 +344,6 @@ const Dashboard: React.FC = () => {
 
         connect();
 
-        // Cleanup function
         return () => {
             isManualClose = true;
             if (reconnectTimeout) {
@@ -349,7 +356,166 @@ const Dashboard: React.FC = () => {
         };
     };
 
-    // Fetch robots from API
+    // ── Setup global robots WebSocket (ws/robots/${userId}/) ─────────────────
+    const setupRobotsWebSocket = (userId: number | string) => {
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        let isManualClose = false;
+
+        const connect = () => {
+            try {
+                const wsUrl = `${wsBaseUrl}/ws/robots/${userId}/`;
+                const ws = new WebSocket(wsUrl);
+                robotsWsRef.current = ws;
+
+                ws.onopen = () => {
+                    console.log(
+                        `✅ Robots global WebSocket connected (user: ${userId})`,
+                    );
+                };
+
+                ws.onmessage = async (event) => {
+                    try {
+                        const payload = JSON.parse(event.data);
+
+                        const robotEvents = [
+                            "robot_activated",
+                            "robot_deactivated",
+                            "robot_assigned",
+                            "robot_unassigned",
+                        ];
+
+                        if (robotEvents.includes(payload.event)) {
+                            console.log(
+                                `📡 Robot event: ${payload.event}`,
+                                payload.data,
+                            );
+
+                            try {
+                                const response = await fetchWithAuth(
+                                    `${API_BASE_URL}/robots/`,
+                                );
+                                if (!response.ok)
+                                    throw new Error(
+                                        `HTTP error! status: ${response.status}`,
+                                    );
+
+                                const apiResponse: RobotsApiResponse =
+                                    await response.json();
+                                if (!apiResponse.results.success)
+                                    throw new Error(
+                                        apiResponse.results.message,
+                                    );
+
+                                const formattedRobots: Robot[] =
+                                    apiResponse.results.data
+                                        .filter((robot) => robot.is_active)
+                                        .map((robot) => ({
+                                            id: robot.id,
+                                            name: robot.name,
+                                            model:
+                                                robot.model_number ??
+                                                "Inspection Bot",
+                                            status:
+                                                robot.status === "AVAILABLE"
+                                                    ? "active"
+                                                    : "idle",
+                                            battery: 0,
+                                            uptime: "0h 0m",
+                                            health: 100,
+                                            task:
+                                                robot.inspection_status ===
+                                                "PENDING"
+                                                    ? "Inspection Pending"
+                                                    : "Inspection Completed",
+                                            taskProgress:
+                                                robot.inspection_status ===
+                                                "PENDING"
+                                                    ? 0
+                                                    : 100,
+                                            ip_address:
+                                                robot.local_ip ?? undefined,
+                                            last_seen:
+                                                robot.last_inspected_at ??
+                                                undefined,
+                                            robo_id: robot.robo_id,
+                                            inspection_summary:
+                                                robot.inspection_summary,
+                                            schedule_summary:
+                                                robot.schedule_summary,
+                                        }));
+
+                                setRobots((prevRobots) => {
+                                    // Preserve live battery/uptime already streamed
+                                    // via the existing ws/robot_message/${roboId}/ sockets
+                                    return formattedRobots.map((newRobot) => {
+                                        const existing = prevRobots.find(
+                                            (r) => r.id === newRobot.id,
+                                        );
+                                        return existing
+                                            ? {
+                                                  ...newRobot,
+                                                  battery: existing.battery,
+                                                  uptime: existing.uptime,
+                                                  batteryInfo:
+                                                      existing.batteryInfo,
+                                              }
+                                            : newRobot;
+                                    });
+                                });
+
+                                // Open ws/robot_message/${roboId}/ for any newly assigned robot
+                                formattedRobots.forEach((robot) => {
+                                    if (
+                                        robot.robo_id &&
+                                        !websocketsRef.current.has(
+                                            robot.robo_id,
+                                        )
+                                    ) {
+                                        setupWebSocket(robot);
+                                    }
+                                });
+                            } catch (err) {
+                                console.error(
+                                    "❌ Failed to refresh robots after event:",
+                                    err,
+                                );
+                            }
+                        }
+                    } catch (err) {
+                        console.error("❌ Robots WebSocket parse error:", err);
+                    }
+                };
+
+                ws.onerror = (err) => {
+                    console.error("❌ Robots WebSocket error:", err);
+                };
+
+                ws.onclose = () => {
+                    console.warn("⚠️ Robots WebSocket disconnected");
+                    robotsWsRef.current = null;
+                    if (!isManualClose) {
+                        reconnectTimeout = setTimeout(connect, 3000);
+                    }
+                };
+            } catch (err) {
+                console.error("❌ Robots WebSocket init failed:", err);
+                if (!isManualClose) {
+                    reconnectTimeout = setTimeout(connect, 3000);
+                }
+            }
+        };
+
+        connect();
+
+        return () => {
+            isManualClose = true;
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            robotsWsRef.current?.close();
+            robotsWsRef.current = null;
+        };
+    };
+
+    // ── Fetch robots from API ─────────────────────────────────────────────────
     useEffect(() => {
         const fetchRobots = async () => {
             try {
@@ -367,7 +533,6 @@ const Dashboard: React.FC = () => {
                     throw new Error(apiResponse.results.message);
                 }
 
-                // Filter only active robots
                 const formattedRobots: Robot[] = apiResponse.results.data
                     .filter((robot) => robot.is_active)
                     .map((robot) => ({
@@ -395,7 +560,6 @@ const Dashboard: React.FC = () => {
                 setRobots(formattedRobots);
                 setError(null);
 
-                // Update Defect Analysis section with first robot's data (initially)
                 if (
                     formattedRobots.length > 0 &&
                     formattedRobots[0].inspection_summary &&
@@ -415,10 +579,22 @@ const Dashboard: React.FC = () => {
                     setSelectedRobotId(formattedRobots[0].id);
                 }
 
-                // Setup WebSocket for each robot
+                // Existing per-robot WebSockets (ws/robot_message/${roboId}/)
                 formattedRobots.forEach((robot) => {
                     setupWebSocket(robot);
                 });
+
+                // ── Global robots WebSocket (ws/robots/${userId}/) — started once ──
+                if (!robotsWsRef.current) {
+                    const userId = tokenStorage.getUserId(); // ✅ now reads user_id correctly
+                    if (userId) {
+                        setupRobotsWebSocket(userId);
+                    } else {
+                        console.warn(
+                            "⚠️ Could not determine userId — robots WebSocket not started",
+                        );
+                    }
+                }
             } catch (err) {
                 console.error("Robot fetch failed:", err);
                 setError("Failed to load robot data");
@@ -434,13 +610,15 @@ const Dashboard: React.FC = () => {
 
         return () => {
             clearInterval(interval);
-            // Close all WebSocket connections on cleanup
+            // Close all per-robot WebSockets
             websocketsRef.current.forEach((ws) => ws.close());
             websocketsRef.current.clear();
+            // Close global robots WebSocket
+            robotsWsRef.current?.close();
+            robotsWsRef.current = null;
         };
     }, []);
 
-    // Calculate statistics
     const activeRobotsCount = robots.filter(
         (r) => r.status === "active",
     ).length;
@@ -462,9 +640,10 @@ const Dashboard: React.FC = () => {
 
     const handleLogout = async () => {
         try {
-            // Close all WebSocket connections
             websocketsRef.current.forEach((ws) => ws.close());
             websocketsRef.current.clear();
+            robotsWsRef.current?.close();
+            robotsWsRef.current = null;
 
             localStorage.clear();
             document.cookie = "access_token=; path=/; max-age=0; SameSite=Lax";
@@ -476,7 +655,6 @@ const Dashboard: React.FC = () => {
         }
     };
 
-    // Get selected robot for display
     const selectedRobot = robots.find((r) => r.id === selectedRobotId);
 
     return (
@@ -554,7 +732,6 @@ const Dashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Robot List */}
                         <div className="space-y-4">
                             {loading && robots.length === 0 ? (
                                 <div className="flex items-center justify-center py-12">
@@ -584,7 +761,6 @@ const Dashboard: React.FC = () => {
                                         key={robot.id}
                                         className="group relative"
                                     >
-                                        {/* Robot Card */}
                                         <div
                                             onClick={() =>
                                                 handleRobotClick(robot.id)
@@ -596,9 +772,7 @@ const Dashboard: React.FC = () => {
                                             }`}
                                         >
                                             <div className="flex items-center justify-between">
-                                                {/* Left: Robot Info */}
                                                 <div className="flex items-center gap-4">
-                                                    {/* Robot Avatar with Status */}
                                                     <div className="relative">
                                                         <div
                                                             className={`w-12 h-12 rounded-xl flex items-center justify-center ${
@@ -617,7 +791,6 @@ const Dashboard: React.FC = () => {
                                                                 }
                                                             />
                                                         </div>
-                                                        {/* Status Indicator */}
                                                         <div
                                                             className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${
                                                                 robot.status ===
@@ -634,7 +807,6 @@ const Dashboard: React.FC = () => {
                                                         />
                                                     </div>
 
-                                                    {/* Robot Details */}
                                                     <div>
                                                         <div className="flex items-center gap-2 mb-1">
                                                             <h3
@@ -647,14 +819,6 @@ const Dashboard: React.FC = () => {
                                                             >
                                                                 {robot.name}
                                                             </h3>
-
-                                                            {robot.ip_address && (
-                                                                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">
-                                                                    {
-                                                                        robot.ip_address
-                                                                    }
-                                                                </span>
-                                                            )}
                                                         </div>
 
                                                         <div className="flex items-center gap-4 text-sm">
@@ -699,9 +863,7 @@ const Dashboard: React.FC = () => {
                                                     </div>
                                                 </div>
 
-                                                {/* Right: Action & Status */}
                                                 <div className="flex items-center gap-4">
-                                                    {/* Status Badge */}
                                                     <div
                                                         className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
                                                             robot.status ===
@@ -724,7 +886,6 @@ const Dashboard: React.FC = () => {
                                                             )}
                                                     </div>
 
-                                                    {/* Arrow Indicator */}
                                                     <div
                                                         className={`transition-opacity duration-200 ${
                                                             selectedRobotId ===
@@ -749,34 +910,6 @@ const Dashboard: React.FC = () => {
                                                     </div>
                                                 </div>
                                             </div>
-
-                                            {/* Progress Bar */}
-                                            <div className="mt-3">
-                                                <div className="flex justify-between text-xs text-slate-500 mb-1">
-                                                    <span>Task Progress</span>
-                                                    <span>
-                                                        {robot.taskProgress ||
-                                                            0}
-                                                        %
-                                                    </span>
-                                                </div>
-                                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                    <div
-                                                        className={`h-full rounded-full ${
-                                                            robot.taskProgress &&
-                                                            robot.taskProgress >
-                                                                50
-                                                                ? "bg-emerald-500"
-                                                                : "bg-amber-500"
-                                                        }`}
-                                                        style={{
-                                                            width: `${robot.taskProgress || 0}%`,
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {/* Helper Text */}
                                             {selectedRobotId === robot.id && (
                                                 <div className="mt-2 text-xs text-emerald-600 flex items-center gap-1">
                                                     <Eye className="w-3 h-3" />
@@ -804,7 +937,6 @@ const Dashboard: React.FC = () => {
 
                 {/* Right Column - Defect Analysis */}
                 <div className="lg:col-span-1">
-                    {/* Defect Metrics */}
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 transition-all duration-200 hover:shadow-md hover:border-slate-200">
                         <div className="flex items-center justify-between mb-6">
                             <h2 className="text-xl font-semibold flex items-center gap-3">
@@ -834,7 +966,6 @@ const Dashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Show selected robot name */}
                         {selectedRobot && (
                             <div className="mb-4 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
                                 <div className="flex items-center gap-2">
@@ -904,7 +1035,7 @@ const Dashboard: React.FC = () => {
                             <div className="bg-amber-50/50 p-4 rounded-lg border border-amber-200/30 transition-all duration-150 hover:bg-amber-50/70">
                                 <div className="flex items-center justify-between">
                                     <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">
-                                        Minor Defects
+                                        No Defects
                                     </h3>
                                     <AlertTriangle
                                         className="text-amber-600/80"

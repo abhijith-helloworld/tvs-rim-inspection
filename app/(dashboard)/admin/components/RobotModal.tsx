@@ -43,7 +43,7 @@ export function RobotModal({ isOpen, onClose, robot, onSubmit, saving }: RobotMo
         robo_id: robot.robo_id,
         name: robot.name,
         local_ip: robot.local_ip || "",
-        minimum_battery_charge: robot.minimum_battery_charge || 20,
+        minimum_battery_charge: typeof robot.minimum_battery_charge === "number" ? robot.minimum_battery_charge : 20,
       });
     } else if (isOpen) {
       setForm({ robo_id: "", name: "", local_ip: "", minimum_battery_charge: 20 });

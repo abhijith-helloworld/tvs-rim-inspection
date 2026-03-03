@@ -16,16 +16,19 @@ import {
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 
-function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
+/* ── Props interface ─────────────────────────────────────────── */
+interface CreateScheduleProps {
+    robotId?: string;
+}
+
+function ScheduleCreatePage({ robotId: robotIdProp }: CreateScheduleProps) {
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
 
-    // CRITICAL FIX: Get robotId from URL params (not route params)
     const robotIdFromUrl = searchParams.get("robot_id");
-    const robotIdFromParams = params?.robotId as string;
+    const robotIdFromParams = params?.robotId as string | undefined;
 
-    // Use URL param first, then route param, then default
     const [robotId, setRobotId] = useState<string>("");
     const [isInitialized, setIsInitialized] = useState(false);
 
@@ -39,9 +42,9 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
     const [loading, setLoading] = useState(false);
     const [immediateLoading, setImmediateLoading] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
-    const [robotInfo, setRobotInfo] = useState<any>(null);
+    const [robotInfo, setRobotInfo] = useState<unknown>(null);
     const [isLoadingRobot, setIsLoadingRobot] = useState(true);
-    
+
     // Location dropdown states
     const [locations, setLocations] = useState<string[]>([]);
     const [isLoadingLocations, setIsLoadingLocations] = useState(true);
@@ -51,17 +54,16 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
 
     /* ===================== INITIALIZE ROBOT ID ===================== */
     useEffect(() => {
-        // Priority: URL param > Route param > Default
+        // Priority: prop > URL param > route param
         const id = robotIdProp || robotIdFromUrl || robotIdFromParams;
         if (!id || id === "undefined" || id === "null") {
             console.error("CreateSchedule - Invalid robotId, redirecting...");
             router.push("/dashboard?robot_id=1");
             return;
         }
-
         setRobotId(id);
         setIsInitialized(true);
-    }, [robotIdFromUrl, robotIdFromParams, router]);
+    }, [robotIdProp, robotIdFromUrl, robotIdFromParams, router]);
 
     /* ===================== AUTH CHECK ===================== */
     useEffect(() => {
@@ -73,20 +75,13 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
     /* ===================== FETCH ROBOT INFORMATION ===================== */
     useEffect(() => {
         const fetchRobotInfo = async () => {
-            if (!robotId || !isInitialized) {
-                return;
-            }
-
+            if (!robotId || !isInitialized) return;
             try {
                 setIsLoadingRobot(true);
                 const response = await fetchWithAuth(
                     `${API_BASE_URL}/robots/${robotId}/`,
                 );
-
-                if (!response.ok) {
-                    throw new Error("Failed to fetch robot information");
-                }
-
+                if (!response.ok) throw new Error("Failed to fetch robot information");
                 const data = await response.json();
                 setRobotInfo(data.data || data);
             } catch (error) {
@@ -96,60 +91,50 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                 setIsLoadingRobot(false);
             }
         };
-
         fetchRobotInfo();
     }, [robotId, isInitialized]);
 
     /* ===================== FETCH LOCATIONS ===================== */
     useEffect(() => {
         const fetchLocations = async () => {
-            if (!robotId || !isInitialized) {
-                return;
-            }
-
+            if (!robotId || !isInitialized) return;
             try {
                 setIsLoadingLocations(true);
                 const response = await fetchWithAuth(
                     `${API_BASE_URL}/robots/${robotId}/location/`,
                 );
-
-                if (!response.ok) {
-                    throw new Error("Failed to fetch locations");
-                }
-
+                if (!response.ok) throw new Error("Failed to fetch locations");
                 const data = await response.json();
-                
                 if (data.success && data.data?.location_data?.data?.locations) {
                     const locationsObj = data.data.location_data.data.locations;
-                    // Extract location values from the object
                     const locationsList = Object.values(locationsObj).filter(
-                        (loc) => loc && typeof loc === "string" && loc.trim() !== ""
+                        (loc) => loc && typeof loc === "string" && (loc as string).trim() !== "",
                     ) as string[];
-                    
                     setLocations(locationsList);
                     setFilteredLocations(locationsList);
                 }
             } catch (error) {
                 console.error("Error fetching locations:", error);
-                // Don't show error toast, just log it - locations are optional
             } finally {
                 setIsLoadingLocations(false);
             }
         };
-
         fetchLocations();
     }, [robotId, isInitialized]);
 
     /* ===================== CLOSE DROPDOWN ON OUTSIDE CLICK ===================== */
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            if (
+                dropdownRef.current &&
+                !dropdownRef.current.contains(event.target as Node)
+            ) {
                 setShowDropdown(false);
             }
         };
-
         document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+        return () =>
+            document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
     const handleChange = (
@@ -158,124 +143,77 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
         >,
     ) => {
         const { name, value } = e.target;
-        setFormData((prev) => ({
-            ...prev,
-            [name]: value,
-        }));
-        if (errors[name]) {
-            setErrors((prev) => ({ ...prev, [name]: "" }));
-        }
+        setFormData((prev) => ({ ...prev, [name]: value }));
+        if (errors[name]) setErrors((prev) => ({ ...prev, [name]: "" }));
     };
 
-    // Handle location input change with filtering
     const handleLocationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
-        setFormData((prev) => ({
-            ...prev,
-            location: value,
-        }));
-        
-        // Filter locations based on input
-        if (value.trim() === "") {
-            setFilteredLocations(locations);
-        } else {
-            const filtered = locations.filter((loc) =>
-                loc.toLowerCase().includes(value.toLowerCase())
-            );
-            setFilteredLocations(filtered);
-        }
-        
+        setFormData((prev) => ({ ...prev, location: value }));
+        setFilteredLocations(
+            value.trim() === ""
+                ? locations
+                : locations.filter((loc) =>
+                      loc.toLowerCase().includes(value.toLowerCase()),
+                  ),
+        );
         setShowDropdown(true);
-        
-        if (errors.location) {
-            setErrors((prev) => ({ ...prev, location: "" }));
-        }
+        if (errors.location) setErrors((prev) => ({ ...prev, location: "" }));
     };
 
-    // Handle location selection from dropdown
     const handleLocationSelect = (location: string) => {
-        setFormData((prev) => ({
-            ...prev,
-            location: location,
-        }));
+        setFormData((prev) => ({ ...prev, location }));
         setShowDropdown(false);
-        if (errors.location) {
-            setErrors((prev) => ({ ...prev, location: "" }));
-        }
+        if (errors.location) setErrors((prev) => ({ ...prev, location: "" }));
     };
 
     const validateForm = () => {
         const newErrors: Record<string, string> = {};
-
-        if (!formData.location.trim()) {
-            newErrors.location = "Location is required";
-        }
-
+        if (!formData.location.trim()) newErrors.location = "Location is required";
         if (!formData.date) {
             newErrors.date = "Date is required";
         } else {
             const selectedDate = new Date(formData.date);
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            if (selectedDate < today) {
-                newErrors.date = "Date cannot be in the past";
-            }
+            if (selectedDate < today) newErrors.date = "Date cannot be in the past";
         }
-
-        if (!formData.time) {
-            newErrors.time = "Start time is required";
-        }
-
+        if (!formData.time) newErrors.time = "Start time is required";
         if (!formData.endTime) {
             newErrors.endTime = "End time is required";
         } else if (formData.time && formData.endTime <= formData.time) {
             newErrors.endTime = "End time must be after start time";
         }
-
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
-    // UPDATED: Validate for immediate inspection
     const validateImmediateForm = () => {
         const newErrors: Record<string, string> = {};
-
-        if (!formData.location.trim()) {
-            newErrors.location = "Location is required";
-        }
-
+        if (!formData.location.trim()) newErrors.location = "Location is required";
         if (!formData.endTime) {
             newErrors.endTime = "End time is required";
         } else {
-            // Check if end time is after current time
             const now = new Date();
             const currentTime = now.toTimeString().slice(0, 5);
-            
-            if (formData.endTime <= currentTime) {
+            if (formData.endTime <= currentTime)
                 newErrors.endTime = "End time must be in the future";
-            }
         }
-
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
 
-    // Create scheduled inspection
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
         if (!robotId || !isInitialized) {
             toast.error("Robot ID not initialized");
             return;
         }
-
         if (!validateForm()) {
             toast.error("Please fix the errors in the form");
             return;
         }
-
         setLoading(true);
-
         try {
             const payload = {
                 location: formData.location,
@@ -287,44 +225,29 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                 `${API_BASE_URL}/robots/${robotId}/schedule/create/`,
                 {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
                 },
             );
-
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(
-                    errorData.message || "Failed to create schedule",
-                );
+                throw new Error(errorData.message || "Failed to create schedule");
             }
-
-            const responseData = await response.json();
-
+            await response.json();
             toast.success(
                 <div className="flex items-center space-x-3">
                     <div className="p-2 rounded-full bg-gradient-to-r from-emerald-500 to-green-400">
                         <CheckCircle className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                        <p className="font-medium text-gray-900">
-                            Schedule Created!
-                        </p>
+                        <p className="font-medium text-gray-900">Schedule Created!</p>
                         <p className="text-sm text-gray-600">
                             Inspection scheduled for {formData.location}
                         </p>
                     </div>
                 </div>,
             );
-
-            setFormData({
-                location: "",
-                date: "",
-                time: "",
-                endTime: "",
-            });
+            setFormData({ location: "", date: "", time: "", endTime: "" });
             setErrors({});
         } catch (error) {
             console.error("Error creating schedule:", error);
@@ -334,13 +257,9 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                         <AlertCircle className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                        <p className="font-medium text-gray-900">
-                            Failed to Create Schedule
-                        </p>
+                        <p className="font-medium text-gray-900">Failed to Create Schedule</p>
                         <p className="text-sm text-gray-600">
-                            {error instanceof Error
-                                ? error.message
-                                : "Please try again later"}
+                            {error instanceof Error ? error.message : "Please try again later"}
                         </p>
                     </div>
                 </div>,
@@ -350,78 +269,57 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
         }
     };
 
-    // UPDATED: Create immediate inspection using existing endTime input
     const handleCreateImmediately = async (e: React.FormEvent) => {
         e.preventDefault();
-
         if (!robotId || !isInitialized) {
             toast.error("Robot ID not initialized");
             return;
         }
-
         if (!validateImmediateForm()) {
             toast.error("Please fix the errors in the form");
             return;
         }
-
         setImmediateLoading(true);
-
         try {
             const now = new Date();
             const currentDate = now.toISOString().split("T")[0];
             const currentTime = now.toTimeString().slice(0, 5);
-
             const payload = {
                 location: formData.location,
                 scheduled_date: currentDate,
                 scheduled_time: currentTime,
-                end_time: formData.endTime, // Use the existing endTime input
+                end_time: formData.endTime,
             };
             const response = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/schedule/create-immediately/`,
                 {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
                 },
             );
-
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 throw new Error(
                     errorData.message || "Failed to create immediate schedule",
                 );
             }
-
             await response.json();
-
             toast.success(
                 <div className="flex items-center space-x-3">
                     <div className="p-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-400">
                         <Zap className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                        <p className="font-medium text-gray-900">
-                            Immediate Inspection Created!
-                        </p>
+                        <p className="font-medium text-gray-900">Immediate Inspection Created!</p>
                         <p className="text-sm text-gray-600">
                             Starting inspection at {formData.location} now
                         </p>
                     </div>
                 </div>,
             );
-
-            setFormData({
-                location: "",
-                date: "",
-                time: "",
-                endTime: "",
-            });
+            setFormData({ location: "", date: "", time: "", endTime: "" });
             setErrors({});
-
-            // Redirect back to dashboard with robot_id
             setTimeout(() => {
                 router.push(`/dashboard?robot_id=${robotId}`);
             }, 2000);
@@ -433,13 +331,9 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                         <AlertCircle className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                        <p className="font-medium text-gray-900">
-                            Failed to Create Immediate Schedule
-                        </p>
+                        <p className="font-medium text-gray-900">Failed to Create Immediate Schedule</p>
                         <p className="text-sm text-gray-600">
-                            {error instanceof Error
-                                ? error.message
-                                : "Please try again later"}
+                            {error instanceof Error ? error.message : "Please try again later"}
                         </p>
                     </div>
                 </div>,
@@ -449,15 +343,12 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
         }
     };
 
-    // Show loading while initializing
     if (!isInitialized || !robotId) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50/30 flex items-center justify-center">
                 <div className="text-center">
                     <Loader2 className="w-12 h-12 animate-spin text-teal-600 mx-auto mb-4" />
-                    <p className="text-gray-600">
-                        Initializing schedule creator...
-                    </p>
+                    <p className="text-gray-600">Initializing schedule creator...</p>
                 </div>
             </div>
         );
@@ -482,11 +373,10 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
 
             <div className="w-auto">
                 <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-                    {/* Form Section */}
-                    <div className="lg:col-span-2 ">
+                    <div className="lg:col-span-2">
                         <div className="rounded-3xl p-6 bg-gradient-to-br from-white to-gray-50/30 shadow-xl overflow-hidden backdrop-blur-sm">
                             {/* Form Header */}
-                            <div className=" border-gray-200/30 bg-gradient-to-r from-white to-gray-50/30 mb-3">
+                            <div className="border-gray-200/30 bg-gradient-to-r from-white to-gray-50/30 mb-3">
                                 <div className="flex items-center justify-between mb-2">
                                     <div>
                                         <h2 className="text-lg font-semibold text-gray-900">
@@ -502,11 +392,8 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                 </div>
                             </div>
 
-                            <div className="">
-                                <form
-                                    onSubmit={handleSubmit}
-                                    className="space-y-6"
-                                >
+                            <div>
+                                <form onSubmit={handleSubmit} className="space-y-6">
                                     {/* Location Field with Dropdown */}
                                     <div ref={dropdownRef}>
                                         <div className="flex items-center space-x-2 mb-3">
@@ -530,18 +417,14 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                                 placeholder="Type or select a location"
                                                 autoComplete="off"
                                                 className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 placeholder-gray-400 ${
-                                                    errors.location
-                                                        ? "border-red-400/50"
-                                                        : ""
+                                                    errors.location ? "border-red-400/50" : ""
                                                 }`}
                                             />
-                                            <ChevronDown 
+                                            <ChevronDown
                                                 className={`absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 transition-transform ${
                                                     showDropdown ? "rotate-180" : ""
                                                 }`}
                                             />
-                                            
-                                            {/* Dropdown Menu */}
                                             {showDropdown && filteredLocations.length > 0 && (
                                                 <div className="absolute z-10 w-full mt-2 bg-white rounded-xl border border-gray-200/50 shadow-lg max-h-60 overflow-y-auto scroll-hide">
                                                     {filteredLocations.map((location, index) => (
@@ -564,16 +447,14 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                             </p>
                                         )}
                                         <p className="text-xs text-gray-500 mt-2">
-                                            {locations.length > 0 
+                                            {locations.length > 0
                                                 ? "Select from saved locations or type a custom location"
-                                                : "Enter the exact location where inspection will occur"
-                                            }
+                                                : "Enter the exact location where inspection will occur"}
                                         </p>
                                     </div>
 
                                     {/* Date & Time Row */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {/* Date Field */}
                                         <div>
                                             <div className="flex items-center space-x-2 mb-2">
                                                 <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
@@ -589,9 +470,7 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                                 value={formData.date}
                                                 onChange={handleChange}
                                                 className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                                    errors.date
-                                                        ? "border-red-400/50"
-                                                        : ""
+                                                    errors.date ? "border-red-400/50" : ""
                                                 }`}
                                             />
                                             {errors.date && (
@@ -602,7 +481,6 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                             )}
                                         </div>
 
-                                        {/* Start Time Field */}
                                         <div>
                                             <div className="flex items-center space-x-2 mb-3">
                                                 <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
@@ -618,9 +496,7 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                                 value={formData.time}
                                                 onChange={handleChange}
                                                 className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                                    errors.time
-                                                        ? "border-red-400/50"
-                                                        : ""
+                                                    errors.time ? "border-red-400/50" : ""
                                                 }`}
                                             />
                                             {errors.time && (
@@ -648,9 +524,7 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                             value={formData.endTime}
                                             onChange={handleChange}
                                             className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                                errors.endTime
-                                                    ? "border-red-400/50"
-                                                    : ""
+                                                errors.endTime ? "border-red-400/50" : ""
                                             }`}
                                         />
                                         {errors.endTime && (
@@ -660,18 +534,16 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                             </p>
                                         )}
                                         <p className="text-xs text-gray-500 mt-2">
-                                            Must be after the start time (for scheduled) or in the future (for immediate)
+                                            Must be after the start time (for scheduled) or in the
+                                            future (for immediate)
                                         </p>
                                     </div>
 
                                     {/* Action Buttons */}
                                     <div className="space-y-3 border-t border-gray-200/30">
-                                        {/* Create Schedule Button */}
                                         <button
                                             type="submit"
-                                            disabled={
-                                                loading || immediateLoading
-                                            }
+                                            disabled={loading || immediateLoading}
                                             className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-emerald-600 hover:to-emerald-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {loading ? (
@@ -687,13 +559,10 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                             )}
                                         </button>
 
-                                        {/* Create Immediately Button */}
                                         <button
                                             type="button"
                                             onClick={handleCreateImmediately}
-                                            disabled={
-                                                loading || immediateLoading
-                                            }
+                                            disabled={loading || immediateLoading}
                                             className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-br from-blue-500 to-cyan-400 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-blue-600 hover:to-cyan-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                             {immediateLoading ? (
@@ -704,9 +573,7 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
                                             ) : (
                                                 <>
                                                     <Zap className="h-5 w-5" />
-                                                    <span>
-                                                        Create Immediately
-                                                    </span>
+                                                    <span>Create Immediately</span>
                                                 </>
                                             )}
                                         </button>
@@ -721,6 +588,7 @@ function ScheduleCreatePage({ robotId: robotIdProp }: { robotId?: string }) {
     );
 }
 
-export default function ScheduleCreate() {
-    return <ScheduleCreatePage />;
+// ── FIX: export default accepts robotId prop so dashboard can pass it ──
+export default function CreateSchedule({ robotId }: CreateScheduleProps) {
+    return <ScheduleCreatePage robotId={robotId} />;
 }
