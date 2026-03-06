@@ -16,6 +16,7 @@ export interface Robot {
     location?: string;
     firmware_version?: string;
     inspection_count?: number;
+    minimum_battery_charge?: number;  // ✅ Add this line
     // ✅ Use unknown instead of number — allows all value types
     [key: string]: unknown;
 }

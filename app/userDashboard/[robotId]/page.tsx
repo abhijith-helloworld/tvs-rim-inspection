@@ -23,14 +23,7 @@ import {
 } from "lucide-react";
 import RobotDashboardHeader from "@/app/Includes/header";
 import { useModal } from "../../components/ModalContext";
-
-export interface RobotData {
-    id: string;
-    name: string;
-    status: string;
-    robo_id?: string;
-    minimum_battery_charge?: number;
-}
+import { RobotData } from "@/app/types/robot";
 
 export interface BatteryStatus {
     level: number;
@@ -397,15 +390,19 @@ const LowBatteryWarningPopup = ({
 const Dashboard: React.FC = () => {
     // ── Modal ─────────────────────────────────────────────────────────────────
     const { showModal } = useModal();
-    // Stable ref so the WS closure always calls the latest showModal
     const showModalRef = useRef(showModal);
-    useEffect(() => {
-        showModalRef.current = showModal;
-    }, [showModal]);
+    useEffect(() => { showModalRef.current = showModal; }, [showModal]);
 
     const [robotId, setRobotId] = useState<string>("");
     const [roboId, setRoboId] = useState<string>("");
+
+    /**
+     * robotData is the source of truth for minimum_battery_charge in this page.
+     * When min_battery_updated fires we patch it here, so both the header
+     * (via prop) and the LowBatteryWarningPopup (via robotData) stay in sync.
+     */
     const [robotData, setRobotData] = useState<RobotData | null>(null);
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showFilterModal, setShowFilterModal] = useState(false);
@@ -423,28 +420,19 @@ const Dashboard: React.FC = () => {
 
     useEffect(() => {
         try {
-            localStorage.setItem(
-                "dashboard_filter",
-                JSON.stringify(currentFilter),
-            );
+            localStorage.setItem("dashboard_filter", JSON.stringify(currentFilter));
         } catch {}
     }, [currentFilter]);
 
     // ── Navigation state ──────────────────────────────────────────────────────
-    const [navigationMode, setNavigationMode] = useState<
-        "stationary" | "autonomous"
-    >("stationary");
-    const [navigationStyle, setNavigationStyle] = useState<
-        "free" | "strict" | "strict_with_autonomous"
-    >("free");
+    const [navigationMode, setNavigationMode] = useState<"stationary" | "autonomous">("stationary");
+    const [navigationStyle, setNavigationStyle] = useState<"free" | "strict" | "strict_with_autonomous">("free");
     const [navPatchLoading, setNavPatchLoading] = useState(false);
     const [navPatchError, setNavPatchError] = useState<string | null>(null);
     const [navFetchLoading, setNavFetchLoading] = useState(false);
-
     const [isAutonomousReady, setIsAutonomousReady] = useState(false);
     const [isModeActive, setIsModeActive] = useState(false);
-    const [showMapNotUploadedPopup, setShowMapNotUploadedPopup] =
-        useState(false);
+    const [showMapNotUploadedPopup, setShowMapNotUploadedPopup] = useState(false);
 
     const applyNavData = useCallback(
         (data: {
@@ -490,22 +478,15 @@ const Dashboard: React.FC = () => {
         processing: 0,
         completed: 0,
     });
-    const [robotStatus, setRobotStatus] =
-        useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
+    const [robotStatus, setRobotStatus] = useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
     const [time, setTime] = useState(new Date().toLocaleTimeString());
-    const [operationMode, setOperationMode] = useState<OperationMode | null>(
-        DEFAULT_OPERATION_MODE,
-    );
+    const [operationMode, setOperationMode] = useState<OperationMode | null>(DEFAULT_OPERATION_MODE);
 
     // ── WebSocket channels ────────────────────────────────────────────────────
     const batteryChannel = useWsChannel<BatteryStatus>(DEFAULT_BATTERY);
     const canChannel = useWsChannel<CanStatus>(DEFAULT_CAN_STATUS);
-    const [lastCanStatus, setLastCanStatus] =
-        useState<CanStatus>(DEFAULT_CAN_STATUS);
-    const cameraChannel = useWsChannel<{
-        left: CameraStatus;
-        right: CameraStatus;
-    }>(DEFAULT_CAMERAS);
+    const [lastCanStatus, setLastCanStatus] = useState<CanStatus>(DEFAULT_CAN_STATUS);
+    const cameraChannel = useWsChannel<{ left: CameraStatus; right: CameraStatus }>(DEFAULT_CAMERAS);
     const armTempChannel = useWsChannel<number>(DEFAULT_ARM_TEMPERATURE);
 
     // ── Extract robotId from URL ──────────────────────────────────────────────
@@ -520,9 +501,7 @@ const Dashboard: React.FC = () => {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetchWithAuth(
-                    `${API_BASE_URL}/robots/${robotId}/`,
-                );
+                const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/`);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const result = await res.json();
                 const robot: RobotData = result.data;
@@ -537,6 +516,60 @@ const Dashboard: React.FC = () => {
                 setLoading(false);
             }
         })();
+    }, [robotId]);
+
+    /* ------------------------------------------------------------------
+       fetchMinimumBatteryCharge
+       Called after min_battery_updated WS event fires.
+       Hits GET /api/robots/{robotId}/ and patches robotData state so:
+         - RobotDashboardHeader receives the updated minimum via prop
+         - LowBatteryWarningPopup threshold stays in sync
+    ------------------------------------------------------------------ */
+    const fetchMinimumBatteryCharge = useCallback(async () => {
+        if (!robotId) return;
+
+        const url = `${API_BASE_URL}/robots/${robotId}/`;
+        console.log(`[min-battery][page] Fetching: ${url}`);
+
+        try {
+            const res = await fetchWithAuth(url, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                console.error(`[min-battery][page] API ${res.status}:`, text);
+                return;
+            }
+
+            const result = await res.json();
+            console.log("[min-battery][page] API response:", result);
+
+            // Unwrap every known response shape
+            let minCharge: number | null = null;
+
+            if (typeof result?.minimum_battery_charge === "number") {
+                minCharge = result.minimum_battery_charge;
+            } else if (typeof result?.data?.minimum_battery_charge === "number") {
+                minCharge = result.data.minimum_battery_charge;
+            } else if (typeof result?.results?.data?.minimum_battery_charge === "number") {
+                minCharge = result.results.data.minimum_battery_charge;
+            } else if (typeof result?.results?.minimum_battery_charge === "number") {
+                minCharge = result.results.minimum_battery_charge;
+            }
+
+            if (minCharge !== null) {
+                console.log(`[min-battery][page] Patching robotData → minimum_battery_charge: ${minCharge}%`);
+                setRobotData((prev) =>
+                    prev ? { ...prev, minimum_battery_charge: minCharge! } : prev,
+                );
+            } else {
+                console.warn("[min-battery][page] Could not extract minimum_battery_charge from:", result);
+            }
+        } catch (err) {
+            console.error("[min-battery][page] fetch failed:", err);
+        }
     }, [robotId]);
 
     // ── Low battery watcher ───────────────────────────────────────────────────
@@ -585,13 +618,10 @@ const Dashboard: React.FC = () => {
                     setInspection({
                         total: result.inspection_summary.total ?? 0,
                         defected: result.inspection_summary.defected ?? 0,
-                        non_defected:
-                            result.inspection_summary.non_defected ?? 0,
+                        non_defected: result.inspection_summary.non_defected ?? 0,
                         approved: result.inspection_summary.approved ?? 0,
-                        human_verified:
-                            result.inspection_summary.human_verified ?? 0,
-                        pending_verification:
-                            result.inspection_summary.pending_verification ?? 0,
+                        human_verified: result.inspection_summary.human_verified ?? 0,
+                        pending_verification: result.inspection_summary.pending_verification ?? 0,
                     });
                 }
             } catch (err) {
@@ -605,15 +635,11 @@ const Dashboard: React.FC = () => {
         if (!id) return;
         try {
             setLocationLoading(true);
-            const res = await fetchWithAuth(
-                `${API_BASE_URL}/robots/${id}/location/`,
-            );
+            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${id}/location/`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const result = await res.json();
             const ld = result?.data?.location_data?.data;
-            setLocations(
-                Object.values(ld?.locations ?? {}).filter(Boolean) as string[],
-            );
+            setLocations(Object.values(ld?.locations ?? {}).filter(Boolean) as string[]);
             setMapName(ld?.map_name ?? "");
         } catch (err) {
             console.error(err);
@@ -630,9 +656,7 @@ const Dashboard: React.FC = () => {
     const fetchOperationMode = useCallback(async () => {
         if (!robotId) return;
         try {
-            const res = await fetchWithAuth(
-                `${API_BASE_URL}/robots/${robotId}/operation-mode/`,
-            );
+            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/operation-mode/`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const result = await res.json();
             const opMode = result.operation_mode || result;
@@ -643,16 +667,12 @@ const Dashboard: React.FC = () => {
     }, [robotId]);
 
     const fetchOperationModeRef = useRef(fetchOperationMode);
-    useEffect(() => {
-        fetchOperationModeRef.current = fetchOperationMode;
-    }, [fetchOperationMode]);
+    useEffect(() => { fetchOperationModeRef.current = fetchOperationMode; }, [fetchOperationMode]);
 
     const refetchNavigation = useCallback(async () => {
         if (!robotId) return;
         try {
-            const res = await fetchWithAuth(
-                `${API_BASE_URL}/robots/${robotId}/navigation/`,
-            );
+            const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/navigation/`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const result = await res.json();
             if (result.data) applyNavData(result.data);
@@ -662,20 +682,13 @@ const Dashboard: React.FC = () => {
     }, [robotId, applyNavData]);
 
     const refetchNavigationRef = useRef(refetchNavigation);
-    useEffect(() => {
-        refetchNavigationRef.current = refetchNavigation;
-    }, [refetchNavigation]);
+    useEffect(() => { refetchNavigationRef.current = refetchNavigation; }, [refetchNavigation]);
 
-    useEffect(() => {
-        refetchNavigation();
-    }, [refetchNavigation]);
+    useEffect(() => { refetchNavigation(); }, [refetchNavigation]);
 
     // ── Clock tick ────────────────────────────────────────────────────────────
     useEffect(() => {
-        const t = setInterval(
-            () => setTime(new Date().toLocaleTimeString()),
-            1000,
-        );
+        const t = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
         return () => clearInterval(t);
     }, []);
 
@@ -731,7 +744,6 @@ const Dashboard: React.FC = () => {
                     const errBody = await res.json().catch(() => ({}));
                     throw new Error(errBody?.message ?? `PATCH ${res.status}`);
                 }
-
                 await refetchNavigation();
             } catch (err) {
                 console.error(err);
@@ -753,12 +765,8 @@ const Dashboard: React.FC = () => {
         }
         if (navPatchLoading || navFetchLoading) return;
 
-        const next =
-            navigationMode === "stationary" ? "autonomous" : "stationary";
-
-        if (next === "autonomous") {
-            await refetchNavigation();
-        }
+        const next = navigationMode === "stationary" ? "autonomous" : "stationary";
+        if (next === "autonomous") await refetchNavigation();
 
         const currentStyle = navigationStyle;
         setNavigationMode(next);
@@ -798,27 +806,20 @@ const Dashboard: React.FC = () => {
 
         const connect = () => {
             try {
-                ws = new WebSocket(
-                    `${wsBaseUrl}/ws/robot_message/${roboId}/`,
-                );
+                ws = new WebSocket(`${wsBaseUrl}/ws/robot_message/${roboId}/`);
                 wsRef.current = ws;
                 ws.onopen = () => setWsConnected(true);
 
                 ws.onmessage = (event) => {
                     try {
                         const payload = JSON.parse(event.data as string);
-
                         setWsEvent(payload);
 
-                        // ── robot_deactivated → show global modal ─────────────
-                        if (payload.event === "robot_unassigned") {
-                            showModalRef.current(
-                                payload.data?.message ??
-                                    `Robot "${robotData?.name ?? roboId}" has been deactivated.`,
-                            );
-                        }
-
-                                                if (payload.event === "robot_deactivated") {
+                        // ── robot_unassigned / robot_deactivated ──────────────
+                        if (
+                            payload.event === "robot_unassigned" ||
+                            payload.event === "robot_deactivated"
+                        ) {
                             showModalRef.current(
                                 payload.data?.message ??
                                     `Robot "${robotData?.name ?? roboId}" has been deactivated.`,
@@ -826,10 +827,7 @@ const Dashboard: React.FC = () => {
                         }
 
                         // ── Map uploaded → refresh locations ──────────────────
-                        if (
-                            payload.event === "upload_clicked" &&
-                            payload.data?.status === true
-                        ) {
+                        if (payload.event === "upload_clicked" && payload.data?.status === true) {
                             fetchLocations(robotId);
                         }
 
@@ -841,30 +839,25 @@ const Dashboard: React.FC = () => {
                         // ── Robot status ──────────────────────────────────────
                         if (payload.event === "robot_status") {
                             setRobotStatus({
-                                break_status:
-                                    payload.data.break_status ?? false,
-                                emergency_status:
-                                    payload.data.emergency_status ?? false,
+                                break_status: payload.data.break_status ?? false,
+                                emergency_status: payload.data.emergency_status ?? false,
                                 Arm_moving: payload.data.Arm_moving ?? false,
                             });
                         }
 
                         // ── Battery ───────────────────────────────────────────
                         if (payload.event === "battery_information") {
-                            const soc = Number(payload.data?.soc) || 0;
+                            const soc     = Number(payload.data?.soc)     || 0;
                             const current = Number(payload.data?.current) || 0;
                             const voltage = Number(payload.data?.voltage) || 0;
-                            const power = Number(payload.data?.power) || 0;
-                            const dod = Number(payload.data?.dod) || 0;
+                            const power   = Number(payload.data?.power)   || 0;
+                            const dod     = Number(payload.data?.dod)     || 0;
 
                             const status: BatteryStatus["status"] =
-                                current > 0.5
-                                    ? "charging"
-                                    : soc >= 99
-                                      ? "full"
-                                      : soc < 20
-                                        ? "low"
-                                        : "discharging";
+                                current > 0.5  ? "charging"
+                                : soc >= 99    ? "full"
+                                : soc < 20     ? "low"
+                                :                "discharging";
 
                             batteryChannel.update({
                                 level: soc,
@@ -891,64 +884,64 @@ const Dashboard: React.FC = () => {
                         if (payload.event === "camera_status_update") {
                             cameraChannel.update({
                                 left: {
-                                    connected:
-                                        payload.data.left_camera?.connected ??
-                                        false,
-                                    usb_speed:
-                                        payload.data.left_camera?.usb_speed ??
-                                        "",
-                                    profiles_ok:
-                                        payload.data.left_camera?.profiles_ok ??
-                                        false,
-                                    frames_ok:
-                                        payload.data.left_camera?.frames_ok ??
-                                        false,
+                                    connected:   payload.data.left_camera?.connected   ?? false,
+                                    usb_speed:   payload.data.left_camera?.usb_speed   ?? "",
+                                    profiles_ok: payload.data.left_camera?.profiles_ok ?? false,
+                                    frames_ok:   payload.data.left_camera?.frames_ok   ?? false,
                                 },
                                 right: {
-                                    connected:
-                                        payload.data.right_camera?.connected ??
-                                        false,
-                                    usb_speed:
-                                        payload.data.right_camera?.usb_speed ??
-                                        "",
-                                    profiles_ok:
-                                        payload.data.right_camera
-                                            ?.profiles_ok ?? false,
-                                    frames_ok:
-                                        payload.data.right_camera?.frames_ok ??
-                                        false,
+                                    connected:   payload.data.right_camera?.connected   ?? false,
+                                    usb_speed:   payload.data.right_camera?.usb_speed   ?? "",
+                                    profiles_ok: payload.data.right_camera?.profiles_ok ?? false,
+                                    frames_ok:   payload.data.right_camera?.frames_ok   ?? false,
                                 },
                             });
                         }
 
                         // ── Arm temperature ───────────────────────────────────
                         if (payload.event === "arm_temperature") {
-                            armTempChannel.update(
-                                Number(payload.data?.temperature) || 0,
-                            );
+                            armTempChannel.update(Number(payload.data?.temperature) || 0);
                         }
 
-                        // ── Operation mode updated → fetch from API ──────────
+                        // ── Operation mode updated → fetch from API ───────────
                         if (payload.event === "operation_mode_updated") {
                             fetchOperationModeRef.current();
                         }
 
-                        // ── Navigation updated / cross-client sync ────────────
+                        // ── Navigation updated ────────────────────────────────
                         if (
                             payload.event === "navigation_updated" ||
-                            payload.event === "navigation_update"
+                            payload.event === "navigation_update" ||
+                            payload.event === "mode_active" ||
+                            payload.event === "autonomous_ready"
                         ) {
                             refetchNavigationRef.current();
                         }
 
-                        // ── mode_active → refetch navigation immediately ───────
-                        if (payload.event === "mode_active") {
-                            refetchNavigationRef.current();
-                        }
+                        /* ── min_battery_updated ─────────────────────────────────
+                           Payload: { "event": "min_battery_updated",
+                                      "data": { "robot_id": 1,
+                                                "minimum_battery_charge": 90 } }
 
-                        // ── autonomous_ready → refetch navigation immediately ──
-                        if (payload.event === "autonomous_ready") {
-                            refetchNavigationRef.current();
+                           ① Apply inline value to robotData immediately
+                           ② Confirm via API call (authoritative source)
+                        ──────────────────────────────────────────────────────── */
+                        if (payload.event === "min_battery_updated") {
+                            console.log("[min-battery][page] WS event:", payload.data);
+
+                            // ① Fast path — inline value present in WS payload
+                            const inlineValue = payload.data?.minimum_battery_charge;
+                            if (typeof inlineValue === "number") {
+                                console.log(`[min-battery][page] Inline → ${inlineValue}%`);
+                                setRobotData((prev) =>
+                                    prev
+                                        ? { ...prev, minimum_battery_charge: inlineValue }
+                                        : prev,
+                                );
+                            }
+
+                            // ② Always confirm with API (handles missing inline value too)
+                            fetchMinimumBatteryCharge();
                         }
                     } catch (err) {
                         console.error("❌ WS parse error:", err);
@@ -964,8 +957,7 @@ const Dashboard: React.FC = () => {
                 };
             } catch (err) {
                 console.error("❌ WS init failed:", err);
-                if (!isManualClose)
-                    reconnectTimeout = setTimeout(connect, 3000);
+                if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
             }
         };
 
@@ -977,35 +969,23 @@ const Dashboard: React.FC = () => {
             wsRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [roboId, robotId, fetchLocations]);
+    }, [roboId, robotId, fetchLocations, fetchMinimumBatteryCharge]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // Derived values
     // ─────────────────────────────────────────────────────────────────────────
 
-    const defectRate =
-        inspection.total > 0
-            ? (inspection.defected / inspection.total) * 100
-            : 0;
-    const successRate =
-        inspection.total > 0
-            ? ((inspection.total - inspection.defected) / inspection.total) *
-              100
-            : 0;
+    const defectRate  = inspection.total > 0 ? (inspection.defected / inspection.total) * 100 : 0;
+    const successRate = inspection.total > 0 ? ((inspection.total - inspection.defected) / inspection.total) * 100 : 0;
     const isAutonomous = navigationMode === "autonomous";
 
     const getFilterLabel = () => {
         switch (currentFilter.filter_type) {
-            case "day":
-                return `Day: ${currentFilter.date}`;
-            case "week":
-                return `Week of ${currentFilter.date}`;
-            case "month":
-                return `Month of ${currentFilter.date}`;
-            case "range":
-                return `${currentFilter.start_date} – ${currentFilter.end_date}`;
-            default:
-                return "All Time";
+            case "day":   return `Day: ${currentFilter.date}`;
+            case "week":  return `Week of ${currentFilter.date}`;
+            case "month": return `Month of ${currentFilter.date}`;
+            case "range": return `${currentFilter.start_date} – ${currentFilter.end_date}`;
+            default:      return "All Time";
         }
     };
 
@@ -1018,9 +998,7 @@ const Dashboard: React.FC = () => {
             <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center">
                 <div className="text-center">
                     <Loader2 className="w-12 h-12 animate-spin text-blue-500 mx-auto mb-4" />
-                    <p className="text-slate-600 text-lg">
-                        Loading robot data...
-                    </p>
+                    <p className="text-slate-600 text-lg">Loading robot data...</p>
                 </div>
             </div>
         );
@@ -1030,9 +1008,7 @@ const Dashboard: React.FC = () => {
             <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center">
                 <div className="text-center">
                     <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-                    <p className="text-slate-800 text-lg font-semibold mb-2">
-                        Error Loading Dashboard
-                    </p>
+                    <p className="text-slate-800 text-lg font-semibold mb-2">Error Loading Dashboard</p>
                     <p className="text-slate-600">{error}</p>
                     <button
                         onClick={() => window.location.reload()}
@@ -1068,6 +1044,12 @@ const Dashboard: React.FC = () => {
                 minimumThreshold={robotData?.minimum_battery_charge ?? 20}
             />
 
+            {/*
+              ── KEY CHANGE: pass wsRef.current as the `ws` prop ──────────────
+              The header listens on this socket for min_battery_updated and
+              operation_mode_updated events independently, so it can update
+              `liveMinimumCharge` without the parent needing to re-render.
+            */}
             <RobotDashboardHeader
                 title="Robotic Inspection Dashboard"
                 subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
@@ -1077,9 +1059,8 @@ const Dashboard: React.FC = () => {
                 wsConnected={wsConnected}
                 time={time}
                 operationMode={operationMode}
-                onOperationModeUpdated={(mode) => {
-                    setOperationMode(mode);
-                }}
+                onOperationModeUpdated={(mode) => setOperationMode(mode)}
+                ws={wsRef.current}
             />
 
             <main className="flex flex-col lg:flex-row gap-6">
@@ -1089,124 +1070,32 @@ const Dashboard: React.FC = () => {
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
                             <h2 className="text-xl font-semibold flex items-center gap-3">
-                                <BarChart3
-                                    className="text-amber-500/80"
-                                    size={24}
-                                />
-                                <span className="text-slate-800">
-                                    Defect Analysis
-                                </span>
+                                <BarChart3 className="text-amber-500/80" size={24} />
+                                <span className="text-slate-800">Defect Analysis</span>
                             </h2>
                             <div className="px-3 py-1.5 bg-slate-50 border-slate-100 rounded-lg text-xs font-medium border">
-                                <span className="text-slate-600">
-                                    Success:{" "}
-                                </span>
-                                <span className="text-emerald-600 font-semibold">
-                                    {successRate.toFixed(1)}%
-                                </span>
+                                <span className="text-slate-600">Success: </span>
+                                <span className="text-emerald-600 font-semibold">{successRate.toFixed(1)}%</span>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                             {[
-                                {
-                                    label: "Total Scanned",
-                                    value: inspection.total,
-                                    icon: (
-                                        <HardDrive
-                                            size={18}
-                                            className="text-blue-500"
-                                        />
-                                    ),
-                                    bg: "bg-slate-50",
-                                    border: "border-slate-100",
-                                    text: "text-slate-900",
-                                },
-                                {
-                                    label: "Defected",
-                                    value: inspection.defected,
-                                    icon: (
-                                        <AlertTriangle
-                                            size={18}
-                                            className="text-rose-500"
-                                        />
-                                    ),
-                                    bg: "bg-rose-50",
-                                    border: "border-rose-100",
-                                    text: "text-rose-700",
-                                },
-                                {
-                                    label: "Non-Defected",
-                                    value: inspection.non_defected,
-                                    icon: (
-                                        <CheckCircle
-                                            size={18}
-                                            className="text-emerald-500"
-                                        />
-                                    ),
-                                    bg: "bg-emerald-50",
-                                    border: "border-emerald-100",
-                                    text: "text-emerald-700",
-                                },
-                                {
-                                    label: "Approved",
-                                    value: inspection.approved,
-                                    icon: (
-                                        <CheckCheck
-                                            size={18}
-                                            className="text-green-500"
-                                        />
-                                    ),
-                                    bg: "bg-green-50",
-                                    border: "border-green-100",
-                                    text: "text-green-700",
-                                },
-                                {
-                                    label: "Verified",
-                                    value: inspection.human_verified,
-                                    icon: (
-                                        <CheckCircle
-                                            size={18}
-                                            className="text-blue-500"
-                                        />
-                                    ),
-                                    bg: "bg-blue-50",
-                                    border: "border-blue-100",
-                                    text: "text-blue-700",
-                                },
-                                {
-                                    label: "Pending",
-                                    value: inspection.pending_verification,
-                                    icon: (
-                                        <Clock
-                                            size={18}
-                                            className="text-amber-500"
-                                        />
-                                    ),
-                                    bg: "bg-amber-50",
-                                    border: "border-amber-100",
-                                    text: "text-amber-700",
-                                },
-                            ].map(
-                                ({ label, value, icon, bg, border, text }) => (
-                                    <div
-                                        key={label}
-                                        className={`${bg} p-4 rounded-lg border ${border}`}
-                                    >
-                                        <div className="flex justify-between">
-                                            <h3 className="text-xs uppercase text-slate-600">
-                                                {label}
-                                            </h3>
-                                            {icon}
-                                        </div>
-                                        <div
-                                            className={`text-2xl font-bold mt-2 ${text}`}
-                                        >
-                                            {value}
-                                        </div>
+                                { label: "Total Scanned",  value: inspection.total,                icon: <HardDrive   size={18} className="text-blue-500"    />, bg: "bg-slate-50",   border: "border-slate-100",   text: "text-slate-900"  },
+                                { label: "Defected",       value: inspection.defected,             icon: <AlertTriangle size={18} className="text-rose-500" />, bg: "bg-rose-50",    border: "border-rose-100",    text: "text-rose-700"   },
+                                { label: "Non-Defected",   value: inspection.non_defected,         icon: <CheckCircle size={18} className="text-emerald-500"  />, bg: "bg-emerald-50", border: "border-emerald-100", text: "text-emerald-700"},
+                                { label: "Approved",       value: inspection.approved,             icon: <CheckCheck  size={18} className="text-green-500"   />, bg: "bg-green-50",   border: "border-green-100",   text: "text-green-700"  },
+                                { label: "Verified",       value: inspection.human_verified,       icon: <CheckCircle size={18} className="text-blue-500"    />, bg: "bg-blue-50",    border: "border-blue-100",    text: "text-blue-700"   },
+                                { label: "Pending",        value: inspection.pending_verification, icon: <Clock       size={18} className="text-amber-500"   />, bg: "bg-amber-50",   border: "border-amber-100",   text: "text-amber-700"  },
+                            ].map(({ label, value, icon, bg, border, text }) => (
+                                <div key={label} className={`${bg} p-4 rounded-lg border ${border}`}>
+                                    <div className="flex justify-between">
+                                        <h3 className="text-xs uppercase text-slate-600">{label}</h3>
+                                        {icon}
                                     </div>
-                                ),
-                            )}
+                                    <div className={`text-2xl font-bold mt-2 ${text}`}>{value}</div>
+                                </div>
+                            ))}
                         </div>
 
                         <div className="mt-5">
@@ -1214,8 +1103,7 @@ const Dashboard: React.FC = () => {
                                 <div>
                                     <h3 className="font-medium">Defect Rate</h3>
                                     <p className="text-sm text-slate-500">
-                                        {defectRate.toFixed(2)}% of scanned
-                                        items have defects
+                                        {defectRate.toFixed(2)}% of scanned items have defects
                                     </p>
                                 </div>
                             </div>
@@ -1232,13 +1120,9 @@ const Dashboard: React.FC = () => {
                     <div className="group cursor-pointer p-6 bg-gradient-to-br from-white to-gray-50 rounded-2xl border border-gray-100 shadow-sm transition-all duration-300">
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                             <div className="space-y-1">
-                                <h3 className="text-2xl font-bold text-gray-900">
-                                    Schedule Dashboard
-                                </h3>
+                                <h3 className="text-2xl font-bold text-gray-900">Schedule Dashboard</h3>
                                 <p className="text-gray-600">
-                                    View detailed schedule information and
-                                    inspection results with advanced filtering
-                                    options.
+                                    View detailed schedule information and inspection results with advanced filtering options.
                                 </p>
                             </div>
                             <div className="relative inline-flex">
@@ -1246,21 +1130,9 @@ const Dashboard: React.FC = () => {
                                     href={`/schedule?robot_id=${robotId}&filter_type=${currentFilter.filter_type}&date=${currentFilter.date ?? ""}&start_date=${currentFilter.start_date ?? ""}&end_date=${currentFilter.end_date ?? ""}`}
                                     className="relative z-10 flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 group/btn hover:shadow-2xl"
                                 >
-                                    <span className="tracking-tight">
-                                        Go to Schedules
-                                    </span>
-                                    <svg
-                                        className="w-5 h-5 transition-transform duration-300 group-hover/btn:translate-x-1"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth="2"
-                                            d="M14 5l7 7m0 0l-7 7m7-7H3"
-                                        />
+                                    <span className="tracking-tight">Go to Schedules</span>
+                                    <svg className="w-5 h-5 transition-transform duration-300 group-hover/btn:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
                                     </svg>
                                 </a>
                                 <div className="absolute -inset-0.5 bg-gradient-to-r from-emerald-400 via-emerald-300 to-emerald-400 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-500" />
@@ -1272,13 +1144,8 @@ const Dashboard: React.FC = () => {
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-6 gap-4">
                             <h2 className="text-xl font-semibold flex items-center gap-3">
-                                <CalendarCheck
-                                    className="text-emerald-500/80"
-                                    size={24}
-                                />
-                                <span className="text-slate-800">
-                                    Schedule Management
-                                </span>
+                                <CalendarCheck className="text-emerald-500/80" size={24} />
+                                <span className="text-slate-800">Schedule Management</span>
                             </h2>
                             <button
                                 onClick={() => setShowFilterModal(true)}
@@ -1291,96 +1158,32 @@ const Dashboard: React.FC = () => {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             {[
-                                {
-                                    label: "Total",
-                                    value: schedules.total,
-                                    icon: (
-                                        <CalendarCheck
-                                            className="text-blue-500/80"
-                                            size={18}
-                                        />
-                                    ),
-                                    bg: "bg-slate-50/70",
-                                    border: "border-slate-200/50",
-                                    text: "text-slate-900",
-                                },
-                                {
-                                    label: "Scheduled",
-                                    value: schedules.scheduled,
-                                    icon: (
-                                        <Calendar
-                                            className="text-blue-600/80"
-                                            size={18}
-                                        />
-                                    ),
-                                    bg: "bg-blue-50/50",
-                                    border: "border-blue-200/30",
-                                    text: "text-blue-700",
-                                },
-                                {
-                                    label: "Processing",
-                                    value: schedules.processing,
-                                    icon: (
-                                        <Clock
-                                            className="text-amber-600/80"
-                                            size={18}
-                                        />
-                                    ),
-                                    bg: "bg-amber-50/50",
-                                    border: "border-amber-200/30",
-                                    text: "text-amber-700",
-                                },
-                                {
-                                    label: "Completed",
-                                    value: schedules.completed,
-                                    icon: (
-                                        <CheckCircle
-                                            className="text-emerald-600/80"
-                                            size={18}
-                                        />
-                                    ),
-                                    bg: "bg-emerald-50/50",
-                                    border: "border-emerald-200/30",
-                                    text: "text-emerald-700",
-                                },
-                            ].map(
-                                ({ label, value, icon, bg, border, text }) => (
-                                    <div
-                                        key={label}
-                                        className={`${bg} p-4 rounded-lg border ${border}`}
-                                    >
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="text-slate-600 text-xs font-medium uppercase">
-                                                {label}
-                                            </h3>
-                                            {icon}
-                                        </div>
-                                        <div
-                                            className={`text-2xl font-bold mt-2 ${text}`}
-                                        >
-                                            {value}
-                                        </div>
+                                { label: "Total",      value: schedules.total,      icon: <CalendarCheck className="text-blue-500/80"    size={18} />, bg: "bg-slate-50/70",   border: "border-slate-200/50",   text: "text-slate-900"  },
+                                { label: "Scheduled",  value: schedules.scheduled,  icon: <Calendar      className="text-blue-600/80"    size={18} />, bg: "bg-blue-50/50",    border: "border-blue-200/30",    text: "text-blue-700"   },
+                                { label: "Processing", value: schedules.processing, icon: <Clock         className="text-amber-600/80"   size={18} />, bg: "bg-amber-50/50",   border: "border-amber-200/30",   text: "text-amber-700"  },
+                                { label: "Completed",  value: schedules.completed,  icon: <CheckCircle   className="text-emerald-600/80" size={18} />, bg: "bg-emerald-50/50", border: "border-emerald-200/30", text: "text-emerald-700"},
+                            ].map(({ label, value, icon, bg, border, text }) => (
+                                <div key={label} className={`${bg} p-4 rounded-lg border ${border}`}>
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-slate-600 text-xs font-medium uppercase">{label}</h3>
+                                        {icon}
                                     </div>
-                                ),
-                            )}
+                                    <div className={`text-2xl font-bold mt-2 ${text}`}>{value}</div>
+                                </div>
+                            ))}
                         </div>
 
                         <div className="pt-6 border-t border-slate-200/50">
                             <div className="flex flex-col md:flex-row justify-between mb-2 gap-2">
-                                <h3 className="font-medium text-slate-800">
-                                    Schedule Progress
-                                </h3>
+                                <h3 className="font-medium text-slate-800">Schedule Progress</h3>
                                 <span className="text-sm text-slate-500">
-                                    {schedules.completed} of {schedules.total}{" "}
-                                    completed
+                                    {schedules.completed} of {schedules.total} completed
                                 </span>
                             </div>
                             <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                 <div
                                     className="h-full bg-gradient-to-r from-blue-400 to-emerald-400 rounded-full"
-                                    style={{
-                                        width: `${schedules.total > 0 ? (schedules.completed / schedules.total) * 100 : 0}%`,
-                                    }}
+                                    style={{ width: `${schedules.total > 0 ? (schedules.completed / schedules.total) * 100 : 0}%` }}
                                 />
                             </div>
                         </div>
@@ -1394,32 +1197,21 @@ const Dashboard: React.FC = () => {
                         <div className="relative bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                             <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
                                 <h2 className="text-xl font-semibold flex items-center gap-2">
-                                    <Battery
-                                        className="text-emerald-500/80"
-                                        size={24}
-                                    />
-                                    <span className="text-slate-800">
-                                        Battery
-                                    </span>
+                                    <Battery className="text-emerald-500/80" size={24} />
+                                    <span className="text-slate-800">Battery</span>
                                 </h2>
                                 <div className="flex flex-col items-end gap-1">
                                     <span
                                         className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                            batteryChannel.value.status ===
-                                            "charging"
+                                            batteryChannel.value.status === "charging"
                                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                : batteryChannel.value
-                                                        .status === "low"
+                                                : batteryChannel.value.status === "low"
                                                   ? "bg-rose-50 text-rose-700 border border-rose-200"
                                                   : "bg-blue-50 text-blue-700 border border-blue-200"
                                         }`}
                                     >
-                                        {batteryChannel.value.status
-                                            .charAt(0)
-                                            .toUpperCase() +
-                                            batteryChannel.value.status.slice(
-                                                1,
-                                            )}
+                                        {batteryChannel.value.status.charAt(0).toUpperCase() +
+                                            batteryChannel.value.status.slice(1)}
                                     </span>
                                 </div>
                             </div>
@@ -1439,22 +1231,16 @@ const Dashboard: React.FC = () => {
                                               ? "bg-gradient-to-r from-amber-500 to-amber-400"
                                               : "bg-gradient-to-r from-rose-500 to-rose-400"
                                     }`}
-                                    style={{
-                                        width: `${batteryChannel.value.level}%`,
-                                    }}
+                                    style={{ width: `${batteryChannel.value.level}%` }}
                                 />
                             </div>
                             <div className="flex justify-between text-xs text-slate-400 mb-4">
-                                <span>0%</span>
-                                <span>50%</span>
-                                <span>100%</span>
+                                <span>0%</span><span>50%</span><span>100%</span>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/30">
-                                    <div className="text-slate-600 text-xs font-medium mb-1">
-                                        DOD
-                                    </div>
+                                    <div className="text-slate-600 text-xs font-medium mb-1">DOD</div>
                                     <div className="text-lg font-bold text-slate-900">
                                         {batteryChannel.value.dod != null
                                             ? `${batteryChannel.value.dod.toFixed(0)}%`
@@ -1462,9 +1248,7 @@ const Dashboard: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-200/30">
-                                    <div className="text-slate-600 text-xs font-medium mb-1">
-                                        Voltage
-                                    </div>
+                                    <div className="text-slate-600 text-xs font-medium mb-1">Voltage</div>
                                     <div className="text-lg font-bold text-slate-900">
                                         {batteryChannel.value.voltage
                                             ? `${batteryChannel.value.voltage.toFixed(1)}V`
@@ -1478,13 +1262,8 @@ const Dashboard: React.FC = () => {
                         <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                             <div className="flex items-center justify-between mb-4">
                                 <h2 className="text-xl font-semibold flex items-center gap-2">
-                                    <MapPin
-                                        className="text-blue-500/80"
-                                        size={24}
-                                    />
-                                    <span className="text-slate-800">
-                                        Robot Location
-                                    </span>
+                                    <MapPin className="text-blue-500/80" size={24} />
+                                    <span className="text-slate-800">Robot Location</span>
                                 </h2>
                                 {(locationLoading || navFetchLoading) && (
                                     <div className="flex items-center gap-1.5 text-xs text-blue-600">
@@ -1496,25 +1275,15 @@ const Dashboard: React.FC = () => {
 
                             {/* Navigation mode toggle */}
                             <div className="flex items-center justify-center gap-3 mb-3">
-                                <span
-                                    className={`text-xs font-semibold transition-colors duration-300 ${!isAutonomous ? "text-slate-800" : "text-slate-400"}`}
-                                >
+                                <span className={`text-xs font-semibold transition-colors duration-300 ${!isAutonomous ? "text-slate-800" : "text-slate-400"}`}>
                                     Stationary
                                 </span>
                                 <button
                                     type="button"
                                     onClick={handleToggleNavigation}
-                                    disabled={
-                                        navPatchLoading ||
-                                        navFetchLoading ||
-                                        !isAutonomousReady
-                                    }
+                                    disabled={navPatchLoading || navFetchLoading || !isAutonomousReady}
                                     className={`relative w-14 h-7 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors duration-300 ${!isAutonomousReady ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${navPatchLoading || navFetchLoading ? "cursor-wait" : ""}`}
-                                    style={{
-                                        backgroundColor: isAutonomous
-                                            ? "#2563eb"
-                                            : "#cbd5e1",
-                                    }}
+                                    style={{ backgroundColor: isAutonomous ? "#2563eb" : "#cbd5e1" }}
                                     aria-label="Toggle navigation mode"
                                 >
                                     {(navPatchLoading || navFetchLoading) && (
@@ -1522,13 +1291,9 @@ const Dashboard: React.FC = () => {
                                             <Loader2 className="w-4 h-4 animate-spin text-white" />
                                         </span>
                                     )}
-                                    <span
-                                        className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out ${isAutonomous ? "translate-x-7" : "translate-x-0"}`}
-                                    />
+                                    <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out ${isAutonomous ? "translate-x-7" : "translate-x-0"}`} />
                                 </button>
-                                <span
-                                    className={`text-xs font-semibold transition-colors duration-300 ${isAutonomous ? "text-blue-700" : "text-slate-400"}`}
-                                >
+                                <span className={`text-xs font-semibold transition-colors duration-300 ${isAutonomous ? "text-blue-700" : "text-slate-400"}`}>
                                     Autonomous
                                 </span>
                             </div>
@@ -1544,48 +1309,29 @@ const Dashboard: React.FC = () => {
                                 <div className="flex items-center gap-2 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">
                                     <AlertCircle className="w-4 h-4 shrink-0" />
                                     <span>{navPatchError}</span>
-                                    <button
-                                        onClick={() => setNavPatchError(null)}
-                                        className="ml-auto text-rose-400 hover:text-rose-600"
-                                    >
+                                    <button onClick={() => setNavPatchError(null)} className="ml-auto text-rose-400 hover:text-rose-600">
                                         <X className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
                             )}
 
-                            <div
-                                className={`overflow-hidden transition-all duration-300 ease-in-out ${isAutonomous ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}
-                            >
+                            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isAutonomous ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}>
                                 <div className="flex gap-2 mb-4">
                                     {(
                                         [
                                             ["free", "Free"],
                                             ["strict", "Strict"],
-                                            [
-                                                "strict_with_autonomous",
-                                                "Strict Auto",
-                                            ],
+                                            ["strict_with_autonomous", "Strict Auto"],
                                         ] as const
                                     ).map(([value, label]) => {
-                                        const disabled =
-                                            value !== "free" && !isModeActive;
+                                        const disabled = value !== "free" && !isModeActive;
                                         return (
                                             <button
                                                 key={value}
                                                 type="button"
-                                                onClick={() =>
-                                                    handleStyleChange(value)
-                                                }
-                                                disabled={
-                                                    navPatchLoading ||
-                                                    navFetchLoading ||
-                                                    disabled
-                                                }
-                                                title={
-                                                    disabled
-                                                        ? "Waiting for mode activation"
-                                                        : ""
-                                                }
+                                                onClick={() => handleStyleChange(value)}
+                                                disabled={navPatchLoading || navFetchLoading || disabled}
+                                                title={disabled ? "Waiting for mode activation" : ""}
                                                 className={`flex-1 text-xs font-semibold px-2 py-2 rounded-lg border transition-all duration-200 ${
                                                     navigationStyle === value
                                                         ? "bg-blue-600 text-white border-blue-600 shadow-sm"
@@ -1601,13 +1347,9 @@ const Dashboard: React.FC = () => {
                                 </div>
 
                                 <div className="flex items-center justify-between mb-2">
-                                    <h3 className="font-medium text-slate-800 text-sm">
-                                        Recent Locations
-                                    </h3>
+                                    <h3 className="font-medium text-slate-800 text-sm">Recent Locations</h3>
                                     {locations.length > 0 && (
-                                        <span className="text-xs text-slate-500">
-                                            Map: {mapName}
-                                        </span>
+                                        <span className="text-xs text-slate-500">Map: {mapName}</span>
                                     )}
                                 </div>
 
@@ -1615,17 +1357,13 @@ const Dashboard: React.FC = () => {
                                     {locationLoading ? (
                                         <div className="flex flex-col items-center justify-center h-full py-6 text-slate-400">
                                             <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-400" />
-                                            <p className="text-sm">
-                                                Loading locations...
-                                            </p>
+                                            <p className="text-sm">Loading locations...</p>
                                         </div>
                                     ) : locations.length > 0 ? (
                                         locations.map((loc, i) => (
                                             <div
                                                 key={i}
-                                                onClick={() =>
-                                                    handleLocationClick(loc)
-                                                }
+                                                onClick={() => handleLocationClick(loc)}
                                                 className="flex items-center gap-3 px-3 py-3 rounded-lg bg-slate-50/80 text-slate-700 text-sm hover:bg-slate-100 transition-colors border border-slate-200/50 cursor-pointer active:bg-slate-200"
                                             >
                                                 <div className="w-2 h-2 rounded-full bg-blue-500" />
@@ -1635,13 +1373,8 @@ const Dashboard: React.FC = () => {
                                     ) : (
                                         <div className="h-full flex flex-col items-center justify-center py-6 text-slate-400">
                                             <MapPin className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                                            <p className="text-sm">
-                                                No locations available
-                                            </p>
-                                            <p className="text-xs text-slate-500 mt-0.5">
-                                                Robot location data will appear
-                                                here
-                                            </p>
+                                            <p className="text-sm">No locations available</p>
+                                            <p className="text-xs text-slate-500 mt-0.5">Robot location data will appear here</p>
                                         </div>
                                     )}
                                 </div>
@@ -1650,12 +1383,8 @@ const Dashboard: React.FC = () => {
                             {!isAutonomous && (
                                 <div className="flex flex-col items-center justify-center py-10 text-slate-400">
                                     <Navigation className="w-10 h-10 mx-auto mb-2 opacity-25" />
-                                    <p className="text-sm font-medium">
-                                        Stationary Mode
-                                    </p>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Enable autonomous to see locations
-                                    </p>
+                                    <p className="text-sm font-medium">Stationary Mode</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Enable autonomous to see locations</p>
                                 </div>
                             )}
                         </div>
@@ -1665,84 +1394,38 @@ const Dashboard: React.FC = () => {
                     <div className="relative bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                         <h2 className="text-xl font-semibold flex items-center gap-3 mb-4">
                             <Camera className="text-violet-500/80" size={20} />
-                            <span className="text-slate-800">
-                                Camera Status
-                            </span>
+                            <span className="text-slate-800">Camera Status</span>
                         </h2>
 
                         <div className="grid grid-cols-2 gap-3">
                             {(["left", "right"] as const).map((side) => {
                                 const cam = cameraChannel.value[side];
                                 return (
-                                    <div
-                                        key={side}
-                                        className="bg-blue-50/50 p-3 rounded-lg border border-blue-200/30"
-                                    >
+                                    <div key={side} className="bg-blue-50/50 p-3 rounded-lg border border-blue-200/30">
                                         <div className="text-slate-700 text-base font-semibold mb-0.5 capitalize">
                                             {side} Camera
                                         </div>
                                         <div className="flex items-center gap-1.5">
-                                            <div
-                                                className={`w-2 h-2 rounded-full ${cam.connected ? "bg-emerald-500" : "bg-red-500"}`}
-                                            />
+                                            <div className={`w-2 h-2 rounded-full ${cam.connected ? "bg-emerald-500" : "bg-red-500"}`} />
                                         </div>
                                         <div className="mt-2 space-y-1">
                                             {[
-                                                {
-                                                    label: "USB Speed",
-                                                    value: cam.usb_speed || "—",
-                                                    conditional: false,
-                                                },
-                                                {
-                                                    label: "Profiles",
-                                                    value: !cam.connected
-                                                        ? "—"
-                                                        : cam.profiles_ok
-                                                          ? "OK"
-                                                          : "Issue",
-                                                    conditional: true,
-                                                    ok: cam.profiles_ok,
-                                                },
-                                                {
-                                                    label: "Frames",
-                                                    value: !cam.connected
-                                                        ? "—"
-                                                        : cam.frames_ok
-                                                          ? "OK"
-                                                          : "Issue",
-                                                    conditional: true,
-                                                    ok: cam.frames_ok,
-                                                },
-                                            ].map(
-                                                ({
-                                                    label,
-                                                    value,
-                                                    conditional,
-                                                    ok,
-                                                }) => (
-                                                    <div
-                                                        key={label}
-                                                        className="flex justify-between text-xs"
-                                                    >
-                                                        <span className="text-slate-500">
-                                                            {label}:
-                                                        </span>
-                                                        <span
-                                                            className={`font-medium ${
-                                                                !conditional
-                                                                    ? "text-slate-900"
-                                                                    : !cam.connected
-                                                                      ? "text-slate-400"
-                                                                      : ok
-                                                                        ? "text-emerald-600"
-                                                                        : "text-red-600"
-                                                            }`}
-                                                        >
-                                                            {value}
-                                                        </span>
-                                                    </div>
-                                                ),
-                                            )}
+                                                { label: "USB Speed", value: cam.usb_speed || "—", conditional: false },
+                                                { label: "Profiles",  value: !cam.connected ? "—" : cam.profiles_ok ? "OK" : "Issue", conditional: true, ok: cam.profiles_ok },
+                                                { label: "Frames",    value: !cam.connected ? "—" : cam.frames_ok   ? "OK" : "Issue", conditional: true, ok: cam.frames_ok   },
+                                            ].map(({ label, value, conditional, ok }) => (
+                                                <div key={label} className="flex justify-between text-xs">
+                                                    <span className="text-slate-500">{label}:</span>
+                                                    <span className={`font-medium ${
+                                                        !conditional ? "text-slate-900"
+                                                        : !cam.connected ? "text-slate-400"
+                                                        : ok ? "text-emerald-600"
+                                                        : "text-red-600"
+                                                    }`}>
+                                                        {value}
+                                                    </span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 );
@@ -1751,13 +1434,8 @@ const Dashboard: React.FC = () => {
 
                         <div className="grid grid-cols-2 gap-2 mt-3">
                             <div className="col-span-2 flex items-center gap-2 mb-1">
-                                <Hand
-                                    className="text-violet-500/80"
-                                    size={20}
-                                />
-                                <span className="text-slate-800 font-medium">
-                                    Hand Status
-                                </span>
+                                <Hand className="text-violet-500/80" size={20} />
+                                <span className="text-slate-800 font-medium">Hand Status</span>
                             </div>
 
                             {(["can0", "can1"] as const).map((can) => (
@@ -1770,27 +1448,11 @@ const Dashboard: React.FC = () => {
                                     }`}
                                 >
                                     <div className="flex items-center justify-between mb-1">
-                                        <span className="text-xs font-semibold text-slate-700 uppercase">
-                                            {can}
-                                        </span>
-                                        <div
-                                            className={`w-2 h-2 rounded-full ${
-                                                lastCanStatus[can]
-                                                    ? "bg-emerald-500 animate-pulse"
-                                                    : "bg-slate-400"
-                                            }`}
-                                        />
+                                        <span className="text-xs font-semibold text-slate-700 uppercase">{can}</span>
+                                        <div className={`w-2 h-2 rounded-full ${lastCanStatus[can] ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
                                     </div>
-                                    <span
-                                        className={`text-sm font-medium ${
-                                            lastCanStatus[can]
-                                                ? "text-emerald-700"
-                                                : "text-slate-600"
-                                        }`}
-                                    >
-                                        {lastCanStatus[can]
-                                            ? "Online"
-                                            : "Offline"}
+                                    <span className={`text-sm font-medium ${lastCanStatus[can] ? "text-emerald-700" : "text-slate-600"}`}>
+                                        {lastCanStatus[can] ? "Online" : "Offline"}
                                     </span>
                                 </div>
                             ))}

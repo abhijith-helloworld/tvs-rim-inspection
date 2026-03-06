@@ -24,6 +24,15 @@ interface FormData {
     is_active: boolean;
 }
 
+interface PaginationState {
+    count: number;
+    next: string | null;
+    previous: string | null;
+    currentPage: number;
+    totalActive: number;
+    totalInactive: number;
+}
+
 /* ================= PAGE ================= */
 
 export default function RimTypePage() {
@@ -31,6 +40,14 @@ export default function RimTypePage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showModal, setShowModal] = useState(false);
+    const [pagination, setPagination] = useState<PaginationState>({
+        count: 0,
+        next: null,
+        previous: null,
+        currentPage: 1,
+        totalActive: 0,
+        totalInactive: 0,
+    });
 
     const [formData, setFormData] = useState<FormData>({
         id: null,
@@ -40,21 +57,30 @@ export default function RimTypePage() {
     });
 
     const isEdit = Boolean(formData.id);
+    const PAGE_SIZE = 8;
+    const totalPages = Math.ceil(pagination.count / PAGE_SIZE);
 
     /* ================= FETCH LIST ================= */
 
-    const fetchRimTypes = async () => {
+    const fetchRimTypes = async (url?: string, page: number = 1) => {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetchWithAuth(`${API_BASE_URL}/rim-types/`);
+            const fetchUrl = url || `${API_BASE_URL}/rim-types/?page=${page}`;
+            const res = await fetchWithAuth(fetchUrl);
             const json = await res.json();
 
-            // Handle nested results structure
             if (json.results && json.results.success) {
                 setRimTypes(json.results.data || []);
+                setPagination({
+                    count: json.results.total_count ?? json.count ?? 0,
+                    next: json.next || null,
+                    previous: json.previous || null,
+                    currentPage: page,
+                    totalActive: json.results.total_active ?? 0,
+                    totalInactive: json.results.total_inactive ?? 0,
+                });
             } else if (json.success) {
-                // Fallback for direct success response
                 setRimTypes(json.data || []);
             } else {
                 setError(json.results?.message || json.message || "Failed to load rim types");
@@ -68,8 +94,26 @@ export default function RimTypePage() {
     };
 
     useEffect(() => {
-        fetchRimTypes();
+        fetchRimTypes(undefined, 1);
     }, []);
+
+    /* ================= PAGINATION HANDLERS ================= */
+
+    const handleNextPage = () => {
+        if (pagination.next) {
+            fetchRimTypes(pagination.next, pagination.currentPage + 1);
+        }
+    };
+
+    const handlePreviousPage = () => {
+        if (pagination.previous) {
+            fetchRimTypes(pagination.previous, pagination.currentPage - 1);
+        }
+    };
+
+    const handlePageClick = (page: number) => {
+        fetchRimTypes(undefined, page);
+    };
 
     /* ================= INPUT CHANGE ================= */
 
@@ -112,8 +156,8 @@ export default function RimTypePage() {
             const json = await res.json();
 
             if (json.success) {
-                fetchRimTypes();
-                handleCancel(); // close modal + reset
+                fetchRimTypes(undefined, pagination.currentPage);
+                handleCancel();
             } else {
                 alert(json.message || "Operation failed");
             }
@@ -155,63 +199,32 @@ export default function RimTypePage() {
             <div className="mb-8">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900">
-                            Rim Types
-                        </h1>
-                        <p className="text-gray-600 mt-2">
-                            Manage and organize your rim inventory
-                        </p>
+                        <h1 className="text-3xl font-bold text-gray-900">Rim Types</h1>
+                        <p className="text-gray-600 mt-2">Manage and organize your rim inventory</p>
                     </div>
 
                     <button
-                        onClick={() => {
-                            handleCancel();
-                            setShowModal(true);
-                        }}
+                        onClick={() => { handleCancel(); setShowModal(true); }}
                         className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5"
                     >
-                        <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M12 4v16m8-8H4"
-                            />
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                         </svg>
                         Add Rim Type
                     </button>
                 </div>
 
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
                     <div className="bg-blue-50 rounded-xl p-5 border border-gray-200 shadow-sm">
                         <div className="flex items-center justify-between">
-                            <div >
-                                <p className="text-sm text-gray-500">
-                                    Total Rims
-                                </p>
-                                <p className="text-2xl font-bold text-gray-900 mt-1">
-                                    {rimTypes.length}
-                                </p>
+                            <div>
+                                <p className="text-sm text-gray-500">Total Rims</p>
+                                <p className="text-2xl font-bold text-gray-900 mt-1">{pagination.count}</p>
                             </div>
                             <div className="w-12 h-12 rounded-lg flex items-center justify-center">
-                                <svg
-                                    className="w-6 h-6 text-blue-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M19 9l-7 7-7-7"
-                                    />
+                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
                                 </svg>
                             </div>
                         </div>
@@ -222,60 +235,12 @@ export default function RimTypePage() {
                             <div>
                                 <p className="text-sm text-gray-500">Active</p>
                                 <p className="text-2xl font-bold text-green-600 mt-1">
-                                    {
-                                        rimTypes.filter(
-                                            (r) => r.is_active,
-                                        ).length
-                                    }
+                                    {pagination.totalActive}
                                 </p>
                             </div>
                             <div className="w-12 h-12 rounded-lg flex items-center justify-center">
-                                <svg
-                                    className="w-6 h-6 text-green-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M5 13l4 4L19 7"
-                                    />
-                                </svg>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-purple-50 rounded-xl p-5 border border-gray-200 shadow-sm">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-500">
-                                    Last Added
-                                </p>
-                                <p className="text-sm font-medium text-gray-900 mt-1">
-                                    {rimTypes.length > 0 
-                                        ? new Date(rimTypes[0].created_at).toLocaleDateString("en-US", {
-                                            month: "short",
-                                            day: "numeric"
-                                        })
-                                        : "N/A"
-                                    }
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 rounded-lg  flex items-center justify-center">
-                                <svg
-                                    className="w-6 h-6 text-purple-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
+                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                                 </svg>
                             </div>
                         </div>
@@ -284,30 +249,14 @@ export default function RimTypePage() {
                     <div className="bg-amber-50 rounded-xl p-5 border border-gray-200 shadow-sm">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">
-                                    Inactive
-                                </p>
+                                <p className="text-sm text-gray-500">Inactive</p>
                                 <p className="text-2xl font-bold text-amber-600 mt-1">
-                                    {
-                                        rimTypes.filter(
-                                            (r) => !r.is_active,
-                                        ).length
-                                    }
+                                    {pagination.totalInactive}
                                 </p>
                             </div>
                             <div className="w-12 h-12 rounded-lg flex items-center justify-center">
-                                <svg
-                                    className="w-6 h-6 text-amber-600"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-                                    />
+                                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                                 </svg>
                             </div>
                         </div>
@@ -321,35 +270,29 @@ export default function RimTypePage() {
                     <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
                         <div className="flex items-center">
                             <div className="flex-shrink-0">
-                                <svg
-                                    className="h-5 w-5 text-red-500"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
+                                <svg className="h-5 w-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                             </div>
                             <div className="ml-3">
-                                <p className="text-sm text-red-700 font-medium">
-                                    {error}
-                                </p>
+                                <p className="text-sm text-red-700 font-medium">{error}</p>
                             </div>
                         </div>
                     </div>
                 </div>
             )}
+
             {/* Table Section */}
-            <div className="">
+            <div>
                 <RimTypeTable
                     data={rimTypes}
                     loading={loading}
                     onEdit={handleEdit}
+                    pagination={pagination}
+                    pageSize={PAGE_SIZE}
+                    onNextPage={handleNextPage}
+                    onPreviousPage={handlePreviousPage}
+                    onPageClick={handlePageClick}
                 />
             </div>
 
@@ -359,46 +302,28 @@ export default function RimTypePage() {
                     <div
                         className="relative bg-white rounded-2xl w-full max-w-2xl shadow-2xl transform transition-all duration-300 animate-scale-in"
                         style={{
-                            background:
-                                "linear-gradient(white, white) padding-box, linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(147, 51, 234, 0.1)) border-box",
+                            background: "linear-gradient(white, white) padding-box, linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(147, 51, 234, 0.1)) border-box",
                             border: "1px solid transparent",
                         }}
                     >
-                        {/* Modal Header */}
                         <div className="flex items-center justify-between p-6 border-b border-gray-100">
                             <div>
                                 <h2 className="text-2xl font-bold text-gray-900">
-                                    {isEdit
-                                        ? "Edit Rim Type"
-                                        : "Add New Rim Type"}
+                                    {isEdit ? "Edit Rim Type" : "Add New Rim Type"}
                                 </h2>
                                 <p className="text-gray-600 mt-1">
-                                    {isEdit
-                                        ? "Update rim type details"
-                                        : "Add a new rim type to your inventory"}
+                                    {isEdit ? "Update rim type details" : "Add a new rim type to your inventory"}
                                 </p>
                             </div>
                             <button
                                 onClick={handleCancel}
                                 className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors group"
                             >
-                                <svg
-                                    className="w-5 h-5 text-gray-500 group-hover:text-gray-700"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth="2"
-                                        d="M6 18L18 6M6 6l12 12"
-                                    />
+                                <svg className="w-5 h-5 text-gray-500 group-hover:text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
                         </div>
-
-                        {/* Modal Content */}
                         <div className="p-6">
                             <RimTypeForm
                                 formData={formData}

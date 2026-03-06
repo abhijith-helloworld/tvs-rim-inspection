@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { API_BASE_URL, fetchWithAuth } from "@/app/lib/auth";
 
 /* ===============================
@@ -48,6 +48,12 @@ interface WebSocketMessage {
     active?: boolean;
     calibration_status?: boolean;
     message?: string;
+}
+
+// Stored ready_for_data_collection event data
+interface ReadyForDataCollectionData {
+    hand?: Hand;
+    receivedAt: number;
 }
 
 /* ===============================
@@ -179,6 +185,111 @@ function DeleteConfirmModal({
 }
 
 /* ===============================
+   PREMATURE CLOSE WARNING MODAL
+================================ */
+function PrematureCloseModal({
+    onClose,
+    onContinue,
+    isClosing = false,
+}: {
+    onClose: () => void;
+    onContinue: () => void;
+    isClosing?: boolean;
+}) {
+    return (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
+                style={{
+                    animation:
+                        "modalPop 0.18s cubic-bezier(0.34,1.56,0.64,1) both",
+                }}
+            >
+                <style>{`
+                    @keyframes modalPop {
+                        from { opacity: 0; transform: scale(0.92) translateY(8px); }
+                        to   { opacity: 1; transform: scale(1) translateY(0); }
+                    }
+                `}</style>
+                <div className="p-6">
+                    {/* Icon */}
+                    <div className="flex items-center justify-center w-12 h-12 rounded-full bg-amber-50 border border-amber-100 mx-auto mb-4">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-6 w-6 text-amber-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                            />
+                        </svg>
+                    </div>
+
+                    <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">
+                        Calibration In Progress
+                    </h3>
+                    <p className="text-sm text-gray-500 text-center mb-6 leading-relaxed">
+                        You have an active calibration session. Closing now will
+                        discard all unsaved progress and clear the collected
+                        data. Are you sure?
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isClosing}
+                            className="px-4 py-2.5 rounded-xl bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                        >
+                            {isClosing ? (
+                                <>
+                                    <svg
+                                        className="animate-spin h-4 w-4"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <circle
+                                            className="opacity-25"
+                                            cx="12"
+                                            cy="12"
+                                            r="10"
+                                            stroke="currentColor"
+                                            strokeWidth="4"
+                                        />
+                                        <path
+                                            className="opacity-75"
+                                            fill="currentColor"
+                                            d="M4 12a8 8 0 018-8v8z"
+                                        />
+                                    </svg>
+                                    Closing...
+                                </>
+                            ) : (
+                                "Close Anyway"
+                            )}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onContinue}
+                            disabled={isClosing}
+                            className="px-4 py-2.5 rounded-xl bg-emerald-600 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                        >
+                            Continue
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ===============================
    MAIN COMPONENT
 ================================ */
 export default function ArmCalibration({
@@ -260,7 +371,31 @@ export default function ArmCalibration({
     // Camera Feed State
     const [activeHandCamera, setActiveHandCamera] = useState<Hand | null>(null);
 
+    // ── NEW: in-memory store for ready_for_data_collection event ──
+    const [readyForDataCollection, setReadyForDataCollection] =
+        useState<ReadyForDataCollectionData | null>(null);
+
+    // ── NEW: premature-close warning modal ──
+    const [showPrematureCloseModal, setShowPrematureCloseModal] =
+        useState(false);
+    const [isClosing, setIsClosing] = useState(false);
+
     const WS_URL = process.env.NEXT_PUBLIC_WS_URL;
+
+    /* ===============================
+       HELPERS
+    ================================ */
+    /** Clear all ready_for_data_collection stored state */
+    const clearReadyForDataCollection = useCallback(() => {
+        setReadyForDataCollection(null);
+        setHandsReady(false);
+        setPointsUnlocked({ left: false, right: false });
+    }, []);
+
+    /** Returns true if there is an active / incomplete calibration session */
+    const hasActiveSession = useCallback(() => {
+        return readyForDataCollection !== null || calibrationActive;
+    }, [readyForDataCollection, calibrationActive]);
 
     /* ===============================
        EFFECTS
@@ -273,167 +408,209 @@ export default function ArmCalibration({
         if (selectedProfileId) fetchCalibrationStatus(selectedProfileId);
     }, [selectedProfileId]);
 
-    // WebSocket connection effect
+    // WebSocket connection effect — with auto-reconnect + sleep/wake detection
     useEffect(() => {
         const wsUrl = `${WS_URL}/ws/robot_message/${roboId}/profile/`;
-        const websocket = new WebSocket(wsUrl);
 
-        websocket.onopen = () => {
-            setWsConnected(true);
-            if (selectedProfileId && selectedProfile) {
-                websocket.send(
-                    JSON.stringify({
-                        event: "profile_clicked",
-                        data: {
-                            profile_id: selectedProfileId,
-                            profile_name: selectedProfile.name,
-                        },
-                    }),
-                );
+        // Guards
+        let destroyed = false;          // set true on effect cleanup — stops all reconnects
+        let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+        let retryCount = 0;
+        const MAX_BACKOFF_MS = 30_000;  // cap backoff at 30 s
+
+        const clearReconnectTimer = () => {
+            if (reconnectTimer !== null) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
             }
         };
 
-        websocket.onmessage = (event) => {
-            try {
-                const data: WebSocketMessage = JSON.parse(event.data);
+        const connect = () => {
+            if (destroyed) return;
 
-                if (
-                    data.type === "hand_toggle" &&
-                    data.hand !== undefined &&
-                    data.active !== undefined
-                ) {
-                    setHands((prev) => ({
-                        ...prev,
-                        [data.hand!]: data.active!,
-                    }));
-                    if (!data.active) {
-                        resetHandPoints(data.hand);
-                        setPointsUnlocked((prev) => ({
+            const websocket = new WebSocket(wsUrl);
+
+            websocket.onopen = () => {
+                if (destroyed) { websocket.close(); return; }
+                retryCount = 0;           // reset backoff on successful connect
+                setWsConnected(true);
+                setWs(websocket);
+            };
+
+            websocket.onmessage = (event) => {
+                if (destroyed) return;
+                try {
+                    const data: WebSocketMessage = JSON.parse(event.data);
+
+                    if (
+                        data.type === "hand_toggle" &&
+                        data.hand !== undefined &&
+                        data.active !== undefined
+                    ) {
+                        setHands((prev) => ({
                             ...prev,
-                            [data.hand!]: false,
+                            [data.hand!]: data.active!,
                         }));
-                    }
-                    setWsMessage(
-                        `${data.hand} hand ${data.active ? "enabled" : "disabled"}`,
-                    );
-                    setTimeout(() => setWsMessage(null), 3000);
-                } else if (
-                    data.type === "point_toggle" &&
-                    data.hand !== undefined &&
-                    data.point !== undefined &&
-                    data.active !== undefined
-                ) {
-                    setPoints((prev) => ({
-                        ...prev,
-                        [data.hand!]: {
-                            ...prev[data.hand!],
-                            [data.point!]: data.active!,
-                        },
-                    }));
-                    setWsMessage(
-                        `${data.hand} ${data.point.replace(/_/g, " ")} ${data.active ? "set" : "unset"}`,
-                    );
-                    setTimeout(() => setWsMessage(null), 3000);
-                } else if ((data as any).event === "calibration_status") {
-                    const value = (data as any).data?.value;
-                    const isActive = value === true || value === "true";
-                    setCalibrationActive(isActive);
-                    if (!isActive) resetCalibrationState();
-                    setWsMessage(
-                        `Calibration ${isActive ? "activated" : "deactivated"}`,
-                    );
-                    setTimeout(() => setWsMessage(null), 3000);
-                    // profile_name is enriched in toggleCalibration() via calibration_toggle event.
-                    // Do NOT re-send here — that caused the duplicate calibration_toggle.
-                }
-
-                const pointDataEventPattern =
-                    /^(left|right)_(point_one|point_two|point_three)_data$/;
-                const match = (data as any).event?.match(pointDataEventPattern);
-                if (match) {
-                    const hand = match[1] as Hand;
-                    const point = match[2] as Point;
-                    const values = (data as any).data?.data?.values;
-                    if (values && Array.isArray(values)) {
-                        setPointData((prev) => ({
-                            ...prev,
-                            [hand]: { ...prev[hand], [point]: values },
-                        }));
-                        setPointsUnlocked((prev) => ({
-                            ...prev,
-                            [hand]: true,
-                        }));
-                        setWsMessage(
-                            `${hand} ${point.replace(/_/g, " ")} data received`,
-                        );
-                        setTimeout(() => setWsMessage(null), 3000);
-                    }
-                }
-
-                const testCompletedPattern = /^test_completed_(left|right)$/;
-                const testMatch = (data as any).event?.match(
-                    testCompletedPattern,
-                );
-                if (testMatch) {
-                    const hand = testMatch[1] as Hand;
-                    const value = (data as any).data?.value;
-                    if (value === "true" || value === true) {
-                        setTestCompletedHands((prev) => ({
-                            ...prev,
-                            [hand]: true,
-                        }));
-                        setShowTestModal(true);
-                        setWsMessage(`Test completed for ${hand} hand`);
-                        setTimeout(() => setWsMessage(null), 3000);
-                    }
-                }
-
-                if ((data as any).event === "ready_for_data_collection") {
-                    setHandsReady(true);
-
-                    const activeHand: Hand | undefined = (data as any).data
-                        ?.hand;
-
-                    if (activeHand === "left" || activeHand === "right") {
-                        setPointsUnlocked((prev) => ({
-                            ...prev,
-                            [activeHand]: true,
-                        }));
-                        setWsMessage(
-                            `Ready for data collection on ${activeHand} hand — you can now select points`,
-                        );
-                    } else {
-                        setHands((currentHands) => {
+                        if (!data.active) {
+                            resetHandPoints(data.hand);
                             setPointsUnlocked((prev) => ({
-                                left: currentHands.left ? true : prev.left,
-                                right: currentHands.right ? true : prev.right,
+                                ...prev,
+                                [data.hand!]: false,
                             }));
-                            return currentHands;
-                        });
+                        }
                         setWsMessage(
-                            "Ready for data collection — you can now select points",
+                            `${data.hand} hand ${data.active ? "enabled" : "disabled"}`,
                         );
+                        setTimeout(() => setWsMessage(null), 3000);
+                    } else if (
+                        data.type === "point_toggle" &&
+                        data.hand !== undefined &&
+                        data.point !== undefined &&
+                        data.active !== undefined
+                    ) {
+                        setPoints((prev) => ({
+                            ...prev,
+                            [data.hand!]: {
+                                ...prev[data.hand!],
+                                [data.point!]: data.active!,
+                            },
+                        }));
+                        setWsMessage(
+                            `${data.hand} ${data.point.replace(/_/g, " ")} ${data.active ? "set" : "unset"}`,
+                        );
+                        setTimeout(() => setWsMessage(null), 3000);
+                    } else if ((data as any).event === "calibration_status") {
+                        const value = (data as any).data?.value;
+                        const isActive = value === true || value === "true";
+                        setCalibrationActive(isActive);
+                        if (!isActive) {
+                            resetCalibrationState();
+                            clearReadyForDataCollection();
+                        }
+                        setWsMessage(
+                            `Calibration ${isActive ? "activated" : "deactivated"}`,
+                        );
+                        setTimeout(() => setWsMessage(null), 3000);
                     }
 
-                    setTimeout(() => setWsMessage(null), 3000);
-                }
-            } catch (err) {}
+                    const pointDataEventPattern =
+                        /^(left|right)_(point_one|point_two|point_three)_data$/;
+                    const match = (data as any).event?.match(pointDataEventPattern);
+                    if (match) {
+                        const hand = match[1] as Hand;
+                        const point = match[2] as Point;
+                        const values = (data as any).data?.data?.values;
+                        if (values && Array.isArray(values)) {
+                            setPointData((prev) => ({
+                                ...prev,
+                                [hand]: { ...prev[hand], [point]: values },
+                            }));
+                            setPointsUnlocked((prev) => ({
+                                ...prev,
+                                [hand]: true,
+                            }));
+                            setWsMessage(
+                                `${hand} ${point.replace(/_/g, " ")} data received`,
+                            );
+                            setTimeout(() => setWsMessage(null), 3000);
+                        }
+                    }
+
+                    const testCompletedPattern = /^test_completed_(left|right)$/;
+                    const testMatch = (data as any).event?.match(testCompletedPattern);
+                    if (testMatch) {
+                        const hand = testMatch[1] as Hand;
+                        const value = (data as any).data?.value;
+                        if (value === "true" || value === true) {
+                            setTestCompletedHands((prev) => ({
+                                ...prev,
+                                [hand]: true,
+                            }));
+                            setShowTestModal(true);
+                            setWsMessage(`Test completed for ${hand} hand`);
+                            setTimeout(() => setWsMessage(null), 3000);
+                        }
+                    }
+
+                    if ((data as any).event === "ready_for_data_collection") {
+                        const activeHand: Hand | undefined = (data as any).data?.hand;
+
+                        setReadyForDataCollection({
+                            hand: activeHand,
+                            receivedAt: Date.now(),
+                        });
+                        setHandsReady(true);
+                        setHands({ left: true, right: true });
+                        setPointsUnlocked({ left: true, right: true });
+
+                        setWsMessage(
+                            "Ready for data collection — both hands are now active and points are selectable",
+                        );
+                        setTimeout(() => setWsMessage(null), 3000);
+                    }
+                } catch (err) {}
+            };
+
+            websocket.onerror = () => {
+                setWsConnected(false);
+            };
+
+            websocket.onclose = () => {
+                if (destroyed) return;
+                setWsConnected(false);
+                setWs(null);
+
+                // Exponential backoff: 1s, 2s, 4s, 8s … capped at 30s
+                const delay = Math.min(1_000 * 2 ** retryCount, MAX_BACKOFF_MS);
+                retryCount += 1;
+                reconnectTimer = setTimeout(connect, delay);
+            };
         };
 
-        websocket.onerror = () => setWsConnected(false);
-        websocket.onclose = () => setWsConnected(false);
-        setWs(websocket);
+        // Initial connection
+        connect();
+
+        // Re-connect immediately when the tab/window becomes visible again
+        // (covers system sleep → wake, tab switch back, screen unlock)
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === "visible") {
+                // If the socket is already open we don't need to do anything
+                setWs((currentWs) => {
+                    if (
+                        !currentWs ||
+                        currentWs.readyState === WebSocket.CLOSED ||
+                        currentWs.readyState === WebSocket.CLOSING
+                    ) {
+                        clearReconnectTimer();   // cancel any pending backoff
+                        retryCount = 0;          // treat wake as a fresh start
+                        connect();
+                    }
+                    return currentWs;
+                });
+            }
+        };
+
+        document.addEventListener("visibilitychange", handleVisibilityChange);
 
         return () => {
-            if (websocket.readyState === WebSocket.OPEN) websocket.close();
+            destroyed = true;
+            clearReconnectTimer();
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            setWs((currentWs) => {
+                if (currentWs && currentWs.readyState === WebSocket.OPEN) {
+                    currentWs.close();
+                }
+                return null;
+            });
         };
-    }, [robotId, roboId, selectedProfileId]);
+    }, [robotId, roboId]);
 
     // Camera feed sync
     useEffect(() => {
         if (hands.left && !hands.right) setActiveHandCamera("left");
         else if (hands.right && !hands.left) setActiveHandCamera("right");
-        else if (!hands.left && !hands.right) setActiveHandCamera(null);
+        else if (hands.left && hands.right) setActiveHandCamera("left"); // default to left if both active
+        else setActiveHandCamera(null);
     }, [hands.left, hands.right]);
 
     /* ===============================
@@ -538,16 +715,17 @@ export default function ArmCalibration({
                 return s;
             };
 
+            // A point counts as selected if it is active OR has collected data
             setSelectedPoints({
                 left: buildSelectedSet(
-                    Boolean(d.left_point_one_active),
-                    Boolean(d.left_point_two_active),
-                    Boolean(d.left_point_three_active),
+                    Boolean(d.left_point_one_active) || Boolean(d.left_point_one?.values),
+                    Boolean(d.left_point_two_active) || Boolean(d.left_point_two?.values),
+                    Boolean(d.left_point_three_active) || Boolean(d.left_point_three?.values),
                 ),
                 right: buildSelectedSet(
-                    Boolean(d.right_point_one_active),
-                    Boolean(d.right_point_two_active),
-                    Boolean(d.right_point_three_active),
+                    Boolean(d.right_point_one_active) || Boolean(d.right_point_one?.values),
+                    Boolean(d.right_point_two_active) || Boolean(d.right_point_two?.values),
+                    Boolean(d.right_point_three_active) || Boolean(d.right_point_three?.values),
                 ),
             });
 
@@ -564,7 +742,10 @@ export default function ArmCalibration({
                 },
             });
 
-            if (!isActive) resetCalibrationState();
+            if (!isActive) {
+                resetCalibrationState();
+                clearReadyForDataCollection();
+            }
         } catch (err) {
             handleApiError(err, "Failed to fetch calibration status");
         }
@@ -659,6 +840,7 @@ export default function ArmCalibration({
                 setSelectedProfileId(null);
                 setSelectedProfile(null);
                 resetCalibrationState();
+                clearReadyForDataCollection();
             }
         } catch (err) {
             handleApiError(err, "Failed to delete profile");
@@ -989,6 +1171,7 @@ export default function ArmCalibration({
         setSelectedProfile(profile);
         setSelectedProfileId(profile.id);
         resetCalibrationState();
+        clearReadyForDataCollection();
         setCalibrationActive(false);
 
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1081,12 +1264,63 @@ export default function ArmCalibration({
         if (success) closeTestModal();
     };
 
+    // ── UPDATED: close with session-awareness ──
     const handleClose = () => {
+        if (hasActiveSession()) {
+            setShowPrematureCloseModal(true);
+            return;
+        }
+        performClose();
+    };
+
+    /** Fully close and clear everything (local state only) */
+    const performClose = () => {
+        clearReadyForDataCollection();
         resetCalibrationState();
         setCalibrationActive(false);
         setSelectedProfile(null);
         setSelectedProfileId(null);
+        setShowPrematureCloseModal(false);
         onClose();
+    };
+
+    /** User chose "Close Anyway" in the warning modal — deactivate calibration on server first */
+    const handlePrematureClose = async () => {
+        setIsClosing(true);
+        // If calibration is currently active, turn it off via API + WebSocket before closing
+        if (calibrationActive && selectedProfileId && selectedProfile) {
+            try {
+                await fetchWithAuth(
+                    `${API_BASE_URL}/robots/${robotId}/profiles/${selectedProfileId}/calibration/`,
+                    {
+                        method: "PATCH",
+                        body: JSON.stringify({ calibration_status: false }),
+                    },
+                );
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(
+                        JSON.stringify({
+                            event: "calibration_status",
+                            data: {
+                                profile_id: selectedProfileId,
+                                profile_name: selectedProfile.name,
+                                value: false,
+                            },
+                        }),
+                    );
+                }
+            } catch {
+                // Best-effort — still close even if the API call fails
+            }
+        }
+        setIsClosing(false);
+        clearReadyForDataCollection();
+        performClose();
+    };
+
+    /** User chose "Continue" in the warning modal */
+    const handleContinueSession = () => {
+        setShowPrematureCloseModal(false);
     };
 
     // Derived: profile being confirmed for delete
@@ -1102,8 +1336,17 @@ export default function ArmCalibration({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             {/* Modal Container */}
             <div className="relative bg-white rounded-xl shadow-xl border border-gray-200 w-[80%] max-h-[90vh] overflow-hidden">
+                {/* Premature Close Warning Modal */}
+                {showPrematureCloseModal && (
+                    <PrematureCloseModal
+                        onClose={handlePrematureClose}
+                        onContinue={handleContinueSession}
+                        isClosing={isClosing}
+                    />
+                )}
+
                 {/* Custom Delete Confirmation Modal */}
-                {profileToDelete && (
+                {profileToDelete && !showPrematureCloseModal && (
                     <DeleteConfirmModal
                         profile={profileToDelete}
                         isDeleting={deletingId === profileToDelete.id}
@@ -1124,6 +1367,15 @@ export default function ArmCalibration({
                             </p>
                         </div>
                         <div className="flex items-center gap-3">
+                            {/* Session indicator */}
+                            {readyForDataCollection && (
+                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-amber-50 border-amber-200">
+                                    <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                    <span className="text-sm font-medium text-amber-700">
+                                        Session Active
+                                    </span>
+                                </div>
+                            )}
                             <div
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${wsConnected ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}
                             >
@@ -1493,12 +1745,6 @@ export default function ArmCalibration({
                                                         <div className="space-y-2 mb-4">
                                                             {POINTS.map(
                                                                 (point) => {
-                                                                    const isSelected =
-                                                                        selectedPoints[
-                                                                            hand
-                                                                        ].has(
-                                                                            point,
-                                                                        );
                                                                     const hasData =
                                                                         pointData[
                                                                             hand
@@ -1506,6 +1752,16 @@ export default function ArmCalibration({
                                                                             point
                                                                         ] !==
                                                                         null;
+                                                                    // Checked if explicitly selected (regardless of whether it has data)
+                                                                    const isSelected =
+                                                                        selectedPoints[
+                                                                            hand
+                                                                        ].has(
+                                                                            point,
+                                                                        );
+                                                                    // Clickable if: hand active + points unlocked + not loading
+                                                                    // Points WITH data can be clicked to toggle selection for Test/Reset
+                                                                    // Points WITHOUT data can be clicked to activate collection
                                                                     const isPointInteractive =
                                                                         hands[
                                                                             hand
@@ -1527,25 +1783,32 @@ export default function ArmCalibration({
                                                                                 disabled={
                                                                                     !isPointInteractive
                                                                                 }
-                                                                                onClick={() =>
-                                                                                    onPointClick(
-                                                                                        hand,
-                                                                                        point,
-                                                                                    )
-                                                                                }
+                                                                                onClick={() => {
+                                                                                    if (!isPointInteractive) return;
+                                                                                    if (hasData) {
+                                                                                        // Toggle selection for Test/Reset without re-triggering collection
+                                                                                        setSelectedPoints((prev) => {
+                                                                                            const s = new Set(prev[hand]);
+                                                                                            if (s.has(point)) s.delete(point);
+                                                                                            else s.add(point);
+                                                                                            return { ...prev, [hand]: s };
+                                                                                        });
+                                                                                    } else {
+                                                                                        onPointClick(hand, point);
+                                                                                    }
+                                                                                }}
                                                                                 title={
-                                                                                    hands[
-                                                                                        hand
-                                                                                    ] &&
-                                                                                    !pointsUnlocked[
-                                                                                        hand
-                                                                                    ]
+                                                                                    hands[hand] && !pointsUnlocked[hand]
                                                                                         ? "Waiting for robot to be ready before points can be selected"
-                                                                                        : undefined
+                                                                                        : hasData
+                                                                                          ? isSelected
+                                                                                            ? "Deselect this point"
+                                                                                            : "Select for Test/Reset"
+                                                                                          : undefined
                                                                                 }
                                                                                 className={`w-full px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-all border flex items-center justify-between ${
                                                                                     isSelected
-                                                                                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                                                                        ? "border-emerald-500 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                                                                                         : isPointInteractive
                                                                                           ? "border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700"
                                                                                           : "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed opacity-60"
@@ -1554,13 +1817,9 @@ export default function ArmCalibration({
                                                                                 <span className="flex items-center gap-2">
                                                                                     <input
                                                                                         type="checkbox"
-                                                                                        checked={
-                                                                                            isSelected
-                                                                                        }
+                                                                                        checked={isSelected}
                                                                                         onChange={() => {}}
-                                                                                        disabled={
-                                                                                            !isPointInteractive
-                                                                                        }
+                                                                                        disabled={!isPointInteractive}
                                                                                         className="w-4 h-4 rounded pointer-events-none"
                                                                                     />
                                                                                     {point
@@ -1588,7 +1847,7 @@ export default function ArmCalibration({
                                                                                         Waiting
                                                                                     </span>
                                                                                 ) : hasData ? (
-                                                                                    <span className="text-xs text-blue-600 font-medium">
+                                                                                    <span className="text-xs text-emerald-600 font-medium">
                                                                                         ✓
                                                                                         Data
                                                                                     </span>

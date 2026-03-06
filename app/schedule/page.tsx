@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import SchedulesList from "./[id]/page";
-import CreateSchedule from "./Shedulecreat";
+import CreateSchedule from "./[id]/_components/Shedulecreat";
 import { tokenStorage, API_BASE_URL, fetchWithAuth } from "../lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -213,16 +213,16 @@ function DashboardContent() {
             if (!result.success)
                 throw new Error(result.message || "Failed to fetch schedules");
 
-            // ✅ UPDATED: Sort with "processing" first, then newest first within groups
+            // Sort with "processing" first, then newest first within groups
             const sorted = [...(result.schedules || [])].sort((a: Schedule, b: Schedule) => {
                 // Priority 1: Processing first (priority 0), then others (priority 1)
                 const priorityA = a.status === 'processing' ? 0 : 1;
                 const priorityB = b.status === 'processing' ? 0 : 1;
-                
+
                 if (priorityA !== priorityB) {
                     return priorityA - priorityB;
                 }
-                
+
                 // Priority 2: Within same status group, newest first
                 const dateA = new Date(
                     `${a.scheduled_date}T${a.scheduled_time}`,
@@ -467,7 +467,11 @@ function DashboardContent() {
 
                     <div className="lg:w-[23%]">
                         <div className="rounded-2xl bg-white shadow-lg overflow-hidden backdrop-blur-sm sticky top-20">
-                            <CreateSchedule robotId={robotId} />
+                            {/* ✅ onSuccess wired up: list refreshes immediately after schedule creation */}
+                            <CreateSchedule
+                                robotId={robotId}
+                                onSuccess={fetchSchedules}
+                            />
                         </div>
                     </div>
                 </div>

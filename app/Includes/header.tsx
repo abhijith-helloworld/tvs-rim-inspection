@@ -302,19 +302,25 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
     onOperationModeUpdated,
     ws,
 }) => {
-    const minimumCharge = robotData?.minimum_battery_charge ?? 20;
-
-    // State driven by the API — never by static props
+    // ── Operation mode — always fetched from API, never from static props ─────
     const [operationMode, setOperationMode] = useState<OperationMode | null>(null);
     const [isLoadingMode, setIsLoadingMode] = useState(false);
 
-    // Track if we've done the initial fetch to avoid duplicate calls
+    /**
+     * minimumCharge priority:
+     *   1. liveMinimumCharge  → updated after API fetch triggered by WS event
+     *   2. robotData prop     → initial value from parent
+     *   3. hard-coded default → 20
+     */
+    const [liveMinimumCharge, setLiveMinimumCharge] = useState<number | null>(null);
+    const minimumCharge = liveMinimumCharge ?? robotData?.minimum_battery_charge ?? 20;
+
+    // Guard against double-fetching on mount
     const hasFetchedRef = useRef(false);
 
-    /**
-     * Shared fetcher: GET /api/robots/{id}/operation-mode/
-     * Call this once on mount, then only when WS event fires
-     */
+    /* ------------------------------------------------------------------
+       fetchOperationMode — GET /api/robots/{id}/operation-mode/
+    ------------------------------------------------------------------ */
     const fetchOperationMode = useCallback(
         (robotId: number | string) => {
             setIsLoadingMode(true);
@@ -332,41 +338,21 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                     return res.json();
                 })
                 .then((result) => {
-                    if (!result) {
-                        setIsLoadingMode(false);
-                        return;
-                    }
-                    
-                    // DEBUG: Log the full response structure
+                    if (!result) { setIsLoadingMode(false); return; }
+
                     console.log("[operation-mode] Full API response:", result);
-                    
-                    // Try multiple unwrapping paths
+
                     let mode: OperationMode | null = null;
-                    
-                    // Path 1: { success: true, data: { operation_mode: { ... } } }
-                    if (result?.data?.operation_mode) {
-                        mode = result.data.operation_mode;
-                        console.log("[operation-mode] Using path: result.data.operation_mode", mode);
-                    }
-                    // Path 2: { operation_mode: { ... } }
-                    else if (result?.operation_mode) {
-                        mode = result.operation_mode;
-                        console.log("[operation-mode] Using path: result.operation_mode", mode);
-                    }
-                    // Path 3: Direct object { mode: "AUTO", ... }
-                    else if (result?.mode) {
-                        mode = result;
-                        console.log("[operation-mode] Using path: direct object", mode);
-                    }
-                    
+                    if (result?.data?.operation_mode)   { mode = result.data.operation_mode; }
+                    else if (result?.operation_mode)    { mode = result.operation_mode; }
+                    else if (result?.mode)              { mode = result; }
+
                     if (mode) {
-                        console.log("[operation-mode] Setting state to:", mode);
                         setOperationMode(mode);
                         onOperationModeUpdated?.(mode);
                     } else {
-                        console.warn("[operation-mode] Could not extract mode from response:", result);
+                        console.warn("[operation-mode] Could not extract mode:", result);
                     }
-                    
                     setIsLoadingMode(false);
                 })
                 .catch((err) => {
@@ -377,21 +363,88 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
         [onOperationModeUpdated],
     );
 
-    /**
-     * ── 1. MOUNT: Fetch operation mode once ──
-     * Only calls the API on initial mount when robotData becomes available
-     */
+    /* ------------------------------------------------------------------
+       fetchMinimumBatteryCharge
+       Triggered by min_battery_updated WS event.
+       Calls GET /api/robots/{id}/ and extracts minimum_battery_charge.
+
+       Handles all known response shapes:
+         • { minimum_battery_charge: 90 }
+         • { data: { minimum_battery_charge: 90 } }
+         • { results: { data: { minimum_battery_charge: 90 } } }
+         • { results: { minimum_battery_charge: 90 } }
+    ------------------------------------------------------------------ */
+    const fetchMinimumBatteryCharge = useCallback(() => {
+        if (!robotData?.id) {
+            console.warn("[min-battery] Skipped — robotData.id missing");
+            return;
+        }
+
+        const url = `${API_BASE_URL}/robots/${robotData.id}/`;
+        console.log(`[min-battery] Fetching: ${url}`);
+
+        fetchWithAuth(url, {
+            method: "GET",
+            headers: { "Content-Type": "application/json" },
+        })
+            .then((res) => {
+                if (!res.ok) {
+                    res.text().then((t) =>
+                        console.error(`[min-battery] API ${res.status}:`, t),
+                    );
+                    return null;
+                }
+                return res.json();
+            })
+            .then((result) => {
+                if (!result) return;
+
+                console.log("[min-battery] API response:", result);
+
+                let minCharge: number | null = null;
+
+                // Shape 1: flat  { minimum_battery_charge: 90 }
+                if (typeof result?.minimum_battery_charge === "number") {
+                    minCharge = result.minimum_battery_charge;
+                }
+                // Shape 2: { data: { minimum_battery_charge: 90 } }
+                else if (typeof result?.data?.minimum_battery_charge === "number") {
+                    minCharge = result.data.minimum_battery_charge;
+                }
+                // Shape 3: { results: { data: { minimum_battery_charge: 90 } } }
+                else if (typeof result?.results?.data?.minimum_battery_charge === "number") {
+                    minCharge = result.results.data.minimum_battery_charge;
+                }
+                // Shape 4: { results: { minimum_battery_charge: 90 } }
+                else if (typeof result?.results?.minimum_battery_charge === "number") {
+                    minCharge = result.results.minimum_battery_charge;
+                }
+
+                if (minCharge !== null) {
+                    console.log(`[min-battery] Updating minimumCharge → ${minCharge}%`);
+                    setLiveMinimumCharge(minCharge);
+                } else {
+                    console.warn("[min-battery] Could not extract minimum_battery_charge from:", result);
+                }
+            })
+            .catch((err) => console.error("[min-battery] fetch failed:", err));
+    }, [robotData?.id]);
+
+    /* ------------------------------------------------------------------
+       1. MOUNT — fetch operation mode once when robotData is available
+    ------------------------------------------------------------------ */
     useEffect(() => {
         if (!robotData?.id || hasFetchedRef.current) return;
-
         hasFetchedRef.current = true;
         fetchOperationMode(robotData.id);
     }, [robotData?.id, fetchOperationMode]);
 
-    /**
-     * ── 2. WEBSOCKET: Re-fetch from API only when operation_mode_updated event fires ──
-     * Sets up a listener that triggers API call only on the specific WS event
-     */
+    /* ------------------------------------------------------------------
+       2. WEBSOCKET — listen for operation_mode_updated & min_battery_updated
+       Both events arrive on the same ws/robot_message/{roboId}/ socket
+       that is already open in the parent (userDashboard/page.tsx) and
+       passed down via the `ws` prop.
+    ------------------------------------------------------------------ */
     useEffect(() => {
         if (!ws) return;
 
@@ -402,36 +455,59 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                     robot_id?: number;
                     robo_id?: string;
                     operation_mode?: OperationMode;
+                    minimum_battery_charge?: number;
                 };
             };
 
             try {
-                message = JSON.parse(
-                    typeof event.data === "string" ? event.data : JSON.stringify(event.data),
-                );
+                const raw = event.data;
+                message =
+                    typeof raw === "string"
+                        ? JSON.parse(raw)
+                        : JSON.parse(JSON.stringify(raw));
             } catch {
                 return;
             }
 
-            // Only act on operation_mode_updated events
-            if (message.event !== "operation_mode_updated") return;
+            console.log("[ws-header] Received event:", message.event, message);
 
-            // Get robot_id from WS event, fallback to robotData.id if needed
-            const robotId = message.data?.robot_id || robotData?.id;
-            if (!robotId) {
-                console.warn("[operation-mode] No robot_id in WS event or robotData");
-                return;
+            /* ── operation_mode_updated ─────────────────────────────── */
+            if (message.event === "operation_mode_updated") {
+                const robotId = message.data?.robot_id ?? robotData?.id;
+                if (!robotId) {
+                    console.warn("[operation-mode] No robot_id available");
+                    return;
+                }
+                fetchOperationMode(robotId);
             }
 
-            // Trigger API fetch immediately
-            fetchOperationMode(robotId);
+            /* ── min_battery_updated ────────────────────────────────────
+               Payload: { "event": "min_battery_updated",
+                          "data": { "robot_id": 1,
+                                    "minimum_battery_charge": 90 } }
+
+               Strategy:
+                 ① Apply inline value instantly  → UI updates with no delay
+                 ② Call API for authoritative confirm (fire-and-forget)
+            ─────────────────────────────────────────────────────────── */
+            if (message.event === "min_battery_updated") {
+                console.log("[min-battery] WS event received:", message.data);
+
+                // ① Fast path — inline value present
+                const inlineValue = message.data?.minimum_battery_charge;
+                if (typeof inlineValue === "number") {
+                    console.log(`[min-battery] Inline value → ${inlineValue}%`);
+                    setLiveMinimumCharge(inlineValue);
+                }
+
+                // ② Always confirm with API (handles missing inline value too)
+                fetchMinimumBatteryCharge();
+            }
         };
 
         ws.addEventListener("message", handleMessage);
-
-        // Cleanup listener on unmount or when ws changes
         return () => ws.removeEventListener("message", handleMessage);
-    }, [ws, robotData?.id, fetchOperationMode]);
+    }, [ws, robotData?.id, fetchOperationMode, fetchMinimumBatteryCharge]);
 
     return (
         <header className="mb-3">

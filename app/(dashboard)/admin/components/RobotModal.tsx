@@ -276,7 +276,7 @@ export function RobotModal({ isOpen, onClose, robot, onSubmit, saving }: RobotMo
                 min="0"
                 max="100"
                 step="1"
-                value={form.minimum_battery_charge}
+                value={form.minimum_battery_charge === 0 ? "" : form.minimum_battery_charge}
                 onChange={(e) => handleChange("minimum_battery_charge", Number(e.target.value))}
                 onBlur={() => handleBlur("minimum_battery_charge")}
                 className={`w-full px-4 py-3 rounded-lg border text-sm transition-colors ${

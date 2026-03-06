@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { fetchWithAuth, API_BASE_URL, tokenStorage } from "../lib/auth";
+import { fetchWithAuth, API_BASE_URL, tokenStorage } from "../../../lib/auth";
 import {
     CalendarDays,
     Clock,
@@ -19,9 +19,10 @@ import { toast, Toaster } from "sonner";
 /* ── Props interface ─────────────────────────────────────────── */
 interface CreateScheduleProps {
     robotId?: string;
+    onSuccess?: () => void; // ✅ NEW: callback to refresh parent list
 }
 
-function ScheduleCreatePage({ robotId: robotIdProp }: CreateScheduleProps) {
+function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleProps) {
     const params = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -249,6 +250,9 @@ function ScheduleCreatePage({ robotId: robotIdProp }: CreateScheduleProps) {
             );
             setFormData({ location: "", date: "", time: "", endTime: "" });
             setErrors({});
+
+            // ✅ Immediately refresh the parent schedule list
+            onSuccess?.();
         } catch (error) {
             console.error("Error creating schedule:", error);
             toast.error(
@@ -320,9 +324,9 @@ function ScheduleCreatePage({ robotId: robotIdProp }: CreateScheduleProps) {
             );
             setFormData({ location: "", date: "", time: "", endTime: "" });
             setErrors({});
-            setTimeout(() => {
-                router.push(`/dashboard?robot_id=${robotId}`);
-            }, 2000);
+
+            // ✅ Immediately refresh the parent schedule list
+            onSuccess?.();
         } catch (error) {
             console.error("Error creating immediate schedule:", error);
             toast.error(
@@ -385,9 +389,6 @@ function ScheduleCreatePage({ robotId: robotIdProp }: CreateScheduleProps) {
                                         <p className="text-sm text-gray-500">
                                             Fill in the inspection information
                                         </p>
-                                    </div>
-                                    <div className="px-3 py-1.5 bg-gradient-to-r from-blue-50 to-cyan-50 text-blue-700 text-xs font-medium rounded-lg border border-blue-200/50">
-                                        All Fields Required
                                     </div>
                                 </div>
                             </div>
@@ -588,7 +589,6 @@ function ScheduleCreatePage({ robotId: robotIdProp }: CreateScheduleProps) {
     );
 }
 
-// ── FIX: export default accepts robotId prop so dashboard can pass it ──
-export default function CreateSchedule({ robotId }: CreateScheduleProps) {
-    return <ScheduleCreatePage robotId={robotId} />;
+export default function CreateSchedule({ robotId, onSuccess }: CreateScheduleProps) {
+    return <ScheduleCreatePage robotId={robotId} onSuccess={onSuccess} />;
 }
