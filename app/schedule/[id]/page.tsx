@@ -73,7 +73,7 @@ function StatusDropdown({ value, onChange }: StatusDropdownProps) {
     const clearAll = () => onChange([]);
 
     return (
-        <div ref={ref} className="relative min-w-[200px]">
+        <div ref={ref} className="relative w-full md:w-[200px]">
             {/* Trigger */}
             <button
                 onClick={() => setOpen((p) => !p)}
@@ -289,16 +289,16 @@ function ScheduleListPage({
 
     /* ===================== MAIN UI ===================== */
     return (
-        <div className="bg-white p-6">
+        <div className="bg-white p-4 md:p-6">
             {/* ── Header ── */}
             <div className="mb-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-md">
+                        <div className="p-2 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 shadow-md shrink-0">
                             <BarChart3 className="w-5 h-5 text-white" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-semibold text-gray-900">
+                            <h1 className="text-xl md:text-2xl font-semibold text-gray-900">
                                 Schedule Management
                             </h1>
                             <p className="text-sm font-semibold text-gray-500 mt-0.5">
@@ -311,7 +311,7 @@ function ScheduleListPage({
                         </div>
                     </div>
                     {filterData && (
-                        <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-medium text-emerald-700">
+                        <div className="self-start sm:self-auto px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-medium text-emerald-700 whitespace-nowrap">
                             <span className="text-emerald-500 mr-1">Filter:</span>
                             {getFilterLabel()}
                         </div>
@@ -320,9 +320,9 @@ function ScheduleListPage({
             </div>
 
             {/* ── Search & Status Filter ── */}
-            <div className="mb-4 flex">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="relative flex-1 max-w-md">
+            <div className="mb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                         <input
                             type="text"
@@ -332,18 +332,20 @@ function ScheduleListPage({
                             className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200/50 bg-white/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 transition-all"
                         />
                     </div>
-                    <StatusDropdown
-                        value={statusFilter}
-                        onChange={onStatusFilterChange}
-                    />
+                    <div className="sm:w-[200px]">
+                        <StatusDropdown
+                            value={statusFilter}
+                            onChange={onStatusFilterChange}
+                        />
+                    </div>
                 </div>
             </div>
 
             {/* ── Grid or empty state ── */}
             {filteredSchedules.length === 0 ? (
-                <div className="rounded-2xl border-2 border-dashed border-gray-300/50 p-16 text-center bg-white/50">
+                <div className="rounded-2xl border-2 border-dashed border-gray-300/50 p-10 md:p-16 text-center bg-white/50">
                     <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-                    <h3 className="text-2xl font-semibold mb-3 text-gray-900">
+                    <h3 className="text-xl md:text-2xl font-semibold mb-3 text-gray-900">
                         No Schedules Found
                     </h3>
                     <p className="text-gray-600">
@@ -354,7 +356,8 @@ function ScheduleListPage({
                 </div>
             ) : (
                 <div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* FIXED: 2-col on md, 3-col on lg, 4-col only at xl+ */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                         {filteredSchedules.map((schedule) => (
                             <div key={schedule.id}>
                                 <ScheduleCard
@@ -367,7 +370,7 @@ function ScheduleListPage({
                     </div>
 
                     {/* ── Pagination ── */}
-                    <div className="flex items-center justify-between pt-6">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-6">
                         <div className="text-sm text-gray-600">
                             Showing{" "}
                             <span className="font-semibold">
@@ -389,7 +392,7 @@ function ScheduleListPage({
                             schedules
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <button
                                 onClick={() =>
                                     onPageChange(pagination.current_page - 1)

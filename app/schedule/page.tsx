@@ -8,7 +8,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import RobotDashboardHeader from "../Includes/header";
 
-// ── Import all shared types from single source of truth ──────────
 import type {
     RobotData,
     BatteryStatus,
@@ -18,11 +17,10 @@ import type {
     Pagination,
 } from "../types/robot";
 
-// Re-export so child components can still import from here if needed
 export type { Schedule, Pagination };
 
 /* ================================================================
-   LOCAL TYPES (not shared)
+   LOCAL TYPES
    ================================================================ */
 
 interface ScheduleSummary {
@@ -94,7 +92,7 @@ function DashboardContent() {
         useState<RobotStatus>(DEFAULT_ROBOT_STATUS);
     const [wsConnected, setWsConnected] = useState<boolean>(false);
 
-    /* ── Schedule state (owned here, passed to list) ────────────── */
+    /* ── Schedule state ─────────────────────────────────────────── */
     const [schedules, setSchedules] = useState<Schedule[]>([]);
     const [pagination, setPagination] =
         useState<Pagination>(DEFAULT_PAGINATION);
@@ -162,22 +160,17 @@ function DashboardContent() {
                 const json = await response.json();
                 if (json.success && json.data) {
                     const raw = json.data;
-
-                    // Normalise: ensure robo_id is always a string (never undefined)
                     const robot: RobotData = {
                         ...raw,
                         robo_id: raw.robo_id ?? "",
                     };
-
                     setRobotData(robot);
-
                     if (typeof raw.battery_level === "number") {
                         setBattery((prev: any) => ({
                             ...prev,
                             level: raw.battery_level as number,
                         }));
                     }
-
                     if (robot.robo_id) setRoboId(robot.robo_id);
                 }
             } catch (error) {
@@ -187,7 +180,7 @@ function DashboardContent() {
         fetchRobotData();
     }, [robotId, isInitialized]);
 
-    /* ── Fetch schedules + summary from filter API ──────────────── */
+    /* ── Fetch schedules ────────────────────────────────────────── */
     const fetchSchedules = useCallback(async () => {
         if (!robotId || isNaN(Number(robotId))) return;
         setSchedulesLoading(true);
@@ -213,33 +206,18 @@ function DashboardContent() {
             if (!result.success)
                 throw new Error(result.message || "Failed to fetch schedules");
 
-            // Sort with "processing" first, then newest first within groups
             const sorted = [...(result.schedules || [])].sort((a: Schedule, b: Schedule) => {
-                // Priority 1: Processing first (priority 0), then others (priority 1)
                 const priorityA = a.status === 'processing' ? 0 : 1;
                 const priorityB = b.status === 'processing' ? 0 : 1;
-
-                if (priorityA !== priorityB) {
-                    return priorityA - priorityB;
-                }
-
-                // Priority 2: Within same status group, newest first
-                const dateA = new Date(
-                    `${a.scheduled_date}T${a.scheduled_time}`,
-                ).getTime();
-                const dateB = new Date(
-                    `${b.scheduled_date}T${b.scheduled_time}`,
-                ).getTime();
+                if (priorityA !== priorityB) return priorityA - priorityB;
+                const dateA = new Date(`${a.scheduled_date}T${a.scheduled_time}`).getTime();
+                const dateB = new Date(`${b.scheduled_date}T${b.scheduled_time}`).getTime();
                 return dateB - dateA;
             });
 
             setSchedules(sorted);
-
             if (result.pagination) setPagination(result.pagination);
-
-            if (result.schedule_summary) {
-                setScheduleSummary(result.schedule_summary);
-            }
+            if (result.schedule_summary) setScheduleSummary(result.schedule_summary);
         } catch (err: unknown) {
             const message =
                 err instanceof Error ? err.message : "Failed to load schedules";
@@ -250,13 +228,12 @@ function DashboardContent() {
         }
     }, [robotId, filterData, statusFilter, currentPage]);
 
-    /* ── Trigger fetch on dependency change ─────────────────────── */
     useEffect(() => {
         if (!robotId || !isInitialized) return;
         fetchSchedules();
     }, [robotId, isInitialized, fetchSchedules]);
 
-    /* ── WebSocket — battery + robot status ─────────────────────── */
+    /* ── WebSocket ──────────────────────────────────────────────── */
     useEffect(() => {
         if (!roboId) return;
 
@@ -282,13 +259,10 @@ function DashboardContent() {
                             const power = Number(payload.data?.power) || 0;
                             const dod = Number(payload.data?.dod) || 0;
                             const status: BatteryStatus["status"] =
-                                current > 0.5
-                                    ? "charging"
-                                    : soc >= 99
-                                      ? "full"
-                                      : soc < 20
-                                        ? "low"
-                                        : "discharging";
+                                current > 0.5 ? "charging"
+                                : soc >= 99 ? "full"
+                                : soc < 20 ? "low"
+                                : "discharging";
                             setBattery({
                                 level: soc,
                                 status,
@@ -302,14 +276,9 @@ function DashboardContent() {
 
                         if (payload.event === "robot_status") {
                             setRobotStatus((prev: any) => ({
-                                break_status:
-                                    payload.data.break_status ??
-                                    prev.break_status,
-                                emergency_status:
-                                    payload.data.emergency_status ??
-                                    prev.emergency_status,
-                                Arm_moving:
-                                    payload.data.Arm_moving ?? prev.Arm_moving,
+                                break_status: payload.data.break_status ?? prev.break_status,
+                                emergency_status: payload.data.emergency_status ?? prev.emergency_status,
+                                Arm_moving: payload.data.Arm_moving ?? prev.Arm_moving,
                             }));
                         }
 
@@ -319,10 +288,7 @@ function DashboardContent() {
                         ) {
                             if (refreshTimeoutRef.current)
                                 clearTimeout(refreshTimeoutRef.current);
-                            refreshTimeoutRef.current = setTimeout(
-                                () => fetchSchedules(),
-                                1000,
-                            );
+                            refreshTimeoutRef.current = setTimeout(() => fetchSchedules(), 1000);
                         }
                     } catch (err) {
                         console.error("❌ WS message parse error:", err);
@@ -348,14 +314,13 @@ function DashboardContent() {
         return () => {
             isManualClose = true;
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
-            if (refreshTimeoutRef.current)
-                clearTimeout(refreshTimeoutRef.current);
+            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
             ws?.close();
             wsRef.current = null;
         };
     }, [roboId, fetchSchedules]);
 
-    /* ── Handlers passed down to list page ──────────────────────── */
+    /* ── Handlers ───────────────────────────────────────────────── */
     const handleStatusFilterChange = useCallback((val: string[]) => {
         setStatusFilter(val);
         setCurrentPage(1);
@@ -385,7 +350,7 @@ function DashboardContent() {
 
     /* ── Render ─────────────────────────────────────────────────── */
     return (
-        <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50/30 p-6">
+        <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50/30 p-4 md:p-6">
             <RobotDashboardHeader
                 title="Robotic Schedule Dashboard"
                 subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
@@ -398,46 +363,47 @@ function DashboardContent() {
 
             <div>
                 {/* ── Stats Grid ── */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-4">
-                    <div className="bg-blue-50 rounded-2xl border border-blue-100 p-6 transition-all duration-200 hover:shadow-lg shadow-sm backdrop-blur-sm">
+                {/* FIXED: always 2-col on mobile, 4-col on sm+ — no collapsing at 1200 */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                    <div className="bg-blue-50 rounded-2xl border border-blue-100 p-4 md:p-6 transition-all duration-200 hover:shadow-lg shadow-sm backdrop-blur-sm">
                         <div className="flex flex-col">
-                            <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
+                            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
                                 {schedulesLoading ? "..." : scheduleSummary.total}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">
+                            <p className="text-xs md:text-sm text-gray-600 font-medium">
                                 Total Schedule
                             </p>
                         </div>
                     </div>
 
-                    <div className="bg-green-50 rounded-2xl shadow-sm border border-green-100 p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
+                    <div className="bg-green-50 rounded-2xl shadow-sm border border-green-100 p-4 md:p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
                         <div className="flex flex-col">
-                            <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
+                            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
                                 {schedulesLoading ? "..." : scheduleSummary.completed}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">
+                            <p className="text-xs md:text-sm text-gray-600 font-medium">
                                 Completed
                             </p>
                         </div>
                     </div>
 
-                    <div className="bg-amber-50 rounded-2xl shadow-sm border border-amber-100 p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
+                    <div className="bg-amber-50 rounded-2xl shadow-sm border border-amber-100 p-4 md:p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
                         <div className="flex flex-col">
-                            <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
+                            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
                                 {schedulesLoading ? "..." : scheduleSummary.scheduled}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">
+                            <p className="text-xs md:text-sm text-gray-600 font-medium">
                                 Pending
                             </p>
                         </div>
                     </div>
 
-                    <div className="bg-blue-50 rounded-2xl shadow-sm border border-gray-200/50 p-6 transition-all duration-200 hover:shadow-lg hover:border-gray-300 backdrop-blur-sm">
+                    <div className="bg-blue-50 rounded-2xl shadow-sm border border-gray-200/50 p-4 md:p-6 transition-all duration-200 hover:shadow-lg hover:border-gray-300 backdrop-blur-sm">
                         <div className="flex flex-col">
-                            <p className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
+                            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
                                 {schedulesLoading ? "..." : scheduleSummary.processing}
                             </p>
-                            <p className="text-sm text-gray-600 font-medium">
+                            <p className="text-xs md:text-sm text-gray-600 font-medium">
                                 Processing
                             </p>
                         </div>
@@ -445,8 +411,10 @@ function DashboardContent() {
                 </div>
 
                 {/* ── Schedule Section ── */}
-                <div className="flex flex-col lg:flex-row gap-6">
-                    <div className="flex-1">
+                {/* FIXED: sidebar only appears at xl+ (≥1280px) to avoid cramping at 1200px */}
+                <div className="flex flex-col xl:flex-row gap-6">
+                    {/* Schedule list — takes full width below xl */}
+                    <div className="flex-1 min-w-0">
                         <div className="rounded-2xl border border-gray-200/50 bg-white shadow-lg overflow-hidden backdrop-blur-sm">
                             <SchedulesList
                                 robotId={robotId}
@@ -465,9 +433,10 @@ function DashboardContent() {
                         </div>
                     </div>
 
-                    <div className="lg:w-[23%]">
-                        <div className="rounded-2xl bg-white shadow-lg overflow-hidden backdrop-blur-sm sticky top-20">
-                            {/* ✅ onSuccess wired up: list refreshes immediately after schedule creation */}
+                    {/* Create form sidebar — full width on mobile/1200, fixed sidebar at xl+ */}
+                    {/* FIXED: w-full on mobile stacks it below; xl:w-80 gives a proper sidebar */}
+                    <div className="xl:w-80 xl:shrink-0">
+                        <div className="rounded-2xl bg-white shadow-lg overflow-hidden backdrop-blur-sm xl:sticky xl:top-20">
                             <CreateSchedule
                                 robotId={robotId}
                                 onSuccess={fetchSchedules}

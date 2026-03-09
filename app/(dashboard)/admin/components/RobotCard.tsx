@@ -351,12 +351,14 @@ export function RobotCard({
             >
               {isDeleting ? "Deactivating..." : "Deactivate"}
             </button>
-            <Link
-              href={`/userDashboard/${robot.id}`}
+
+            {/* ── Go to Dashboard — appends ?from=admin so the dashboard shows a Back button ── */}
+            <a
+              href={`/userDashboard/${robot.id}?from=admin`}
               className="col-span-2 w-full text-center px-4 py-2 rounded-lg border border-green-200 text-green-700 text-sm font-medium hover:bg-green-50 transition-colors"
             >
               Go to Dashboard
-            </Link>
+            </a>
           </div>
         </div>
       </div>

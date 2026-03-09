@@ -396,11 +396,6 @@ const Dashboard: React.FC = () => {
     const [robotId, setRobotId] = useState<string>("");
     const [roboId, setRoboId] = useState<string>("");
 
-    /**
-     * robotData is the source of truth for minimum_battery_charge in this page.
-     * When min_battery_updated fires we patch it here, so both the header
-     * (via prop) and the LowBatteryWarningPopup (via robotData) stay in sync.
-     */
     const [robotData, setRobotData] = useState<RobotData | null>(null);
 
     const [loading, setLoading] = useState(true);
@@ -423,6 +418,9 @@ const Dashboard: React.FC = () => {
             localStorage.setItem("dashboard_filter", JSON.stringify(currentFilter));
         } catch {}
     }, [currentFilter]);
+
+    // ── Detect if navigated from admin ────────────────────────────────────────
+    const [cameFromAdmin, setCameFromAdmin] = useState(false);
 
     // ── Navigation state ──────────────────────────────────────────────────────
     const [navigationMode, setNavigationMode] = useState<"stationary" | "autonomous">("stationary");
@@ -489,10 +487,15 @@ const Dashboard: React.FC = () => {
     const cameraChannel = useWsChannel<{ left: CameraStatus; right: CameraStatus }>(DEFAULT_CAMERAS);
     const armTempChannel = useWsChannel<number>(DEFAULT_ARM_TEMPERATURE);
 
-    // ── Extract robotId from URL ──────────────────────────────────────────────
+    // ── Extract robotId from URL & detect admin referral ──────────────────────
     useEffect(() => {
         const parts = window.location.pathname.split("/");
         setRobotId(parts[parts.length - 1]);
+
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("from") === "admin") {
+            setCameFromAdmin(true);
+        }
     }, []);
 
     // ── Fetch robot data ──────────────────────────────────────────────────────
@@ -518,13 +521,6 @@ const Dashboard: React.FC = () => {
         })();
     }, [robotId]);
 
-    /* ------------------------------------------------------------------
-       fetchMinimumBatteryCharge
-       Called after min_battery_updated WS event fires.
-       Hits GET /api/robots/{robotId}/ and patches robotData state so:
-         - RobotDashboardHeader receives the updated minimum via prop
-         - LowBatteryWarningPopup threshold stays in sync
-    ------------------------------------------------------------------ */
     const fetchMinimumBatteryCharge = useCallback(async () => {
         if (!robotId) return;
 
@@ -546,7 +542,6 @@ const Dashboard: React.FC = () => {
             const result = await res.json();
             console.log("[min-battery][page] API response:", result);
 
-            // Unwrap every known response shape
             let minCharge: number | null = null;
 
             if (typeof result?.minimum_battery_charge === "number") {
@@ -815,7 +810,6 @@ const Dashboard: React.FC = () => {
                         const payload = JSON.parse(event.data as string);
                         setWsEvent(payload);
 
-                        // ── robot_unassigned / robot_deactivated ──────────────
                         if (
                             payload.event === "robot_unassigned" ||
                             payload.event === "robot_deactivated"
@@ -826,17 +820,14 @@ const Dashboard: React.FC = () => {
                             );
                         }
 
-                        // ── Map uploaded → refresh locations ──────────────────
                         if (payload.event === "upload_clicked" && payload.data?.status === true) {
                             fetchLocations(robotId);
                         }
 
-                        // ── Location updated → refresh locations ──────────────
                         if (payload.event === "location_updated") {
                             fetchLocations(robotId);
                         }
 
-                        // ── Robot status ──────────────────────────────────────
                         if (payload.event === "robot_status") {
                             setRobotStatus({
                                 break_status: payload.data.break_status ?? false,
@@ -845,7 +836,6 @@ const Dashboard: React.FC = () => {
                             });
                         }
 
-                        // ── Battery ───────────────────────────────────────────
                         if (payload.event === "battery_information") {
                             const soc     = Number(payload.data?.soc)     || 0;
                             const current = Number(payload.data?.current) || 0;
@@ -870,7 +860,6 @@ const Dashboard: React.FC = () => {
                             });
                         }
 
-                        // ── CAN status ────────────────────────────────────────
                         if (payload.event === "can_status") {
                             const canData = {
                                 can0: payload.data.can0 ?? false,
@@ -880,7 +869,6 @@ const Dashboard: React.FC = () => {
                             setLastCanStatus(canData);
                         }
 
-                        // ── Camera status ─────────────────────────────────────
                         if (payload.event === "camera_status_update") {
                             cameraChannel.update({
                                 left: {
@@ -898,17 +886,14 @@ const Dashboard: React.FC = () => {
                             });
                         }
 
-                        // ── Arm temperature ───────────────────────────────────
                         if (payload.event === "arm_temperature") {
                             armTempChannel.update(Number(payload.data?.temperature) || 0);
                         }
 
-                        // ── Operation mode updated → fetch from API ───────────
                         if (payload.event === "operation_mode_updated") {
                             fetchOperationModeRef.current();
                         }
 
-                        // ── Navigation updated ────────────────────────────────
                         if (
                             payload.event === "navigation_updated" ||
                             payload.event === "navigation_update" ||
@@ -918,18 +903,9 @@ const Dashboard: React.FC = () => {
                             refetchNavigationRef.current();
                         }
 
-                        /* ── min_battery_updated ─────────────────────────────────
-                           Payload: { "event": "min_battery_updated",
-                                      "data": { "robot_id": 1,
-                                                "minimum_battery_charge": 90 } }
-
-                           ① Apply inline value to robotData immediately
-                           ② Confirm via API call (authoritative source)
-                        ──────────────────────────────────────────────────────── */
                         if (payload.event === "min_battery_updated") {
                             console.log("[min-battery][page] WS event:", payload.data);
 
-                            // ① Fast path — inline value present in WS payload
                             const inlineValue = payload.data?.minimum_battery_charge;
                             if (typeof inlineValue === "number") {
                                 console.log(`[min-battery][page] Inline → ${inlineValue}%`);
@@ -940,7 +916,6 @@ const Dashboard: React.FC = () => {
                                 );
                             }
 
-                            // ② Always confirm with API (handles missing inline value too)
                             fetchMinimumBatteryCharge();
                         }
                     } catch (err) {
@@ -1044,12 +1019,31 @@ const Dashboard: React.FC = () => {
                 minimumThreshold={robotData?.minimum_battery_charge ?? 20}
             />
 
-            {/*
-              ── KEY CHANGE: pass wsRef.current as the `ws` prop ──────────────
-              The header listens on this socket for min_battery_updated and
-              operation_mode_updated events independently, so it can update
-              `liveMinimumCharge` without the parent needing to re-render.
-            */}
+            {/* ── Back to Admin button ── */}
+            {cameFromAdmin && (
+                <div className="mb-4">
+                    <button
+                        onClick={() => window.history.back()}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all"
+                    >
+                        <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M10 19l-7-7m0 0l7-7m-7 7h18"
+                            />
+                        </svg>
+                        Back to Admin
+                    </button>
+                </div>
+            )}
+
             <RobotDashboardHeader
                 title="Robotic Inspection Dashboard"
                 subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
@@ -1063,9 +1057,12 @@ const Dashboard: React.FC = () => {
                 ws={wsRef.current}
             />
 
-            <main className="flex flex-col lg:flex-row gap-6">
-                {/* ── Left column ─────────────────────────────────────────── */}
-                <div className="lg:w-3/5 space-y-6">
+            {/* ── FIXED: use xl breakpoint so side-by-side only fires at ≥1280px ── */}
+            <main className="flex flex-col xl:flex-row gap-6">
+
+                {/* ── Left column: takes full width below xl, half above ── */}
+                <div className="xl:w-1/2 space-y-6">
+
                     {/* Defect Analysis */}
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
@@ -1079,7 +1076,8 @@ const Dashboard: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {/* FIXED: 3-col grid only at xl instead of lg */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                             {[
                                 { label: "Total Scanned",  value: inspection.total,                icon: <HardDrive   size={18} className="text-blue-500"    />, bg: "bg-slate-50",   border: "border-slate-100",   text: "text-slate-900"  },
                                 { label: "Defected",       value: inspection.defected,             icon: <AlertTriangle size={18} className="text-rose-500" />, bg: "bg-rose-50",    border: "border-rose-100",    text: "text-rose-700"   },
@@ -1156,7 +1154,8 @@ const Dashboard: React.FC = () => {
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* FIXED: 4-col grid only at xl instead of lg */}
+                        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
                             {[
                                 { label: "Total",      value: schedules.total,      icon: <CalendarCheck className="text-blue-500/80"    size={18} />, bg: "bg-slate-50/70",   border: "border-slate-200/50",   text: "text-slate-900"  },
                                 { label: "Scheduled",  value: schedules.scheduled,  icon: <Calendar      className="text-blue-600/80"    size={18} />, bg: "bg-blue-50/50",    border: "border-blue-200/30",    text: "text-blue-700"   },
@@ -1190,9 +1189,13 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* ── Right column ────────────────────────────────────────── */}
-                <div className="lg:w-2/5 space-y-6">
-                    <div className="grid grid-cols-2 gap-6">
+                {/* ── Right column: takes full width below xl, half above ── */}
+                <div className="xl:w-1/2 space-y-6">
+
+                    {/* FIXED: Battery and Robot Location stack on smaller screens,
+                        side-by-side only when the right column itself is wide enough */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
                         {/* Battery */}
                         <div className="relative bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                             <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
@@ -1273,16 +1276,16 @@ const Dashboard: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Navigation mode toggle */}
+                            {/* FIXED: whitespace-nowrap prevents "Au...omous" clipping */}
                             <div className="flex items-center justify-center gap-3 mb-3">
-                                <span className={`text-xs font-semibold transition-colors duration-300 ${!isAutonomous ? "text-slate-800" : "text-slate-400"}`}>
+                                <span className={`text-xs font-semibold whitespace-nowrap transition-colors duration-300 ${!isAutonomous ? "text-slate-800" : "text-slate-400"}`}>
                                     Stationary
                                 </span>
                                 <button
                                     type="button"
                                     onClick={handleToggleNavigation}
                                     disabled={navPatchLoading || navFetchLoading || !isAutonomousReady}
-                                    className={`relative w-14 h-7 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors duration-300 ${!isAutonomousReady ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${navPatchLoading || navFetchLoading ? "cursor-wait" : ""}`}
+                                    className={`relative w-14 h-7 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors duration-300 shrink-0 ${!isAutonomousReady ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${navPatchLoading || navFetchLoading ? "cursor-wait" : ""}`}
                                     style={{ backgroundColor: isAutonomous ? "#2563eb" : "#cbd5e1" }}
                                     aria-label="Toggle navigation mode"
                                 >
@@ -1293,7 +1296,7 @@ const Dashboard: React.FC = () => {
                                     )}
                                     <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 ease-in-out ${isAutonomous ? "translate-x-7" : "translate-x-0"}`} />
                                 </button>
-                                <span className={`text-xs font-semibold transition-colors duration-300 ${isAutonomous ? "text-blue-700" : "text-slate-400"}`}>
+                                <span className={`text-xs font-semibold whitespace-nowrap transition-colors duration-300 ${isAutonomous ? "text-blue-700" : "text-slate-400"}`}>
                                     Autonomous
                                 </span>
                             </div>
@@ -1316,7 +1319,8 @@ const Dashboard: React.FC = () => {
                             )}
 
                             <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isAutonomous ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"}`}>
-                                <div className="flex gap-2 mb-4">
+                                {/* FIXED: flex-wrap + min-w so buttons don't crush at narrow widths */}
+                                <div className="flex flex-wrap gap-2 mb-4">
                                     {(
                                         [
                                             ["free", "Free"],
@@ -1332,7 +1336,7 @@ const Dashboard: React.FC = () => {
                                                 onClick={() => handleStyleChange(value)}
                                                 disabled={navPatchLoading || navFetchLoading || disabled}
                                                 title={disabled ? "Waiting for mode activation" : ""}
-                                                className={`flex-1 text-xs font-semibold px-2 py-2 rounded-lg border transition-all duration-200 ${
+                                                className={`flex-1 min-w-[60px] text-xs font-semibold px-2 py-2 rounded-lg border transition-all duration-200 ${
                                                     navigationStyle === value
                                                         ? "bg-blue-600 text-white border-blue-600 shadow-sm"
                                                         : disabled
@@ -1349,7 +1353,7 @@ const Dashboard: React.FC = () => {
                                 <div className="flex items-center justify-between mb-2">
                                     <h3 className="font-medium text-slate-800 text-sm">Recent Locations</h3>
                                     {locations.length > 0 && (
-                                        <span className="text-xs text-slate-500">Map: {mapName}</span>
+                                        <span className="text-xs text-slate-500 truncate ml-2">Map: {mapName}</span>
                                     )}
                                 </div>
 
@@ -1366,8 +1370,8 @@ const Dashboard: React.FC = () => {
                                                 onClick={() => handleLocationClick(loc)}
                                                 className="flex items-center gap-3 px-3 py-3 rounded-lg bg-slate-50/80 text-slate-700 text-sm hover:bg-slate-100 transition-colors border border-slate-200/50 cursor-pointer active:bg-slate-200"
                                             >
-                                                <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                                <span>{loc}</span>
+                                                <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                                                <span className="truncate">{loc}</span>
                                             </div>
                                         ))
                                     ) : (

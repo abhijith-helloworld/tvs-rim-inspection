@@ -19,7 +19,7 @@ import { toast, Toaster } from "sonner";
 /* ── Props interface ─────────────────────────────────────────── */
 interface CreateScheduleProps {
     robotId?: string;
-    onSuccess?: () => void; // ✅ NEW: callback to refresh parent list
+    onSuccess?: () => void;
 }
 
 function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleProps) {
@@ -55,7 +55,6 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
 
     /* ===================== INITIALIZE ROBOT ID ===================== */
     useEffect(() => {
-        // Priority: prop > URL param > route param
         const id = robotIdProp || robotIdFromUrl || robotIdFromParams;
         if (!id || id === "undefined" || id === "null") {
             console.error("CreateSchedule - Invalid robotId, redirecting...");
@@ -250,8 +249,6 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
             );
             setFormData({ location: "", date: "", time: "", endTime: "" });
             setErrors({});
-
-            // ✅ Immediately refresh the parent schedule list
             onSuccess?.();
         } catch (error) {
             console.error("Error creating schedule:", error);
@@ -324,8 +321,6 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
             );
             setFormData({ location: "", date: "", time: "", endTime: "" });
             setErrors({});
-
-            // ✅ Immediately refresh the parent schedule list
             onSuccess?.();
         } catch (error) {
             console.error("Error creating immediate schedule:", error);
@@ -376,213 +371,203 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
             />
 
             <div className="w-auto">
-                <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-                    <div className="lg:col-span-2">
-                        <div className="rounded-3xl p-6 bg-gradient-to-br from-white to-gray-50/30 shadow-xl overflow-hidden backdrop-blur-sm">
-                            {/* Form Header */}
-                            <div className="border-gray-200/30 bg-gradient-to-r from-white to-gray-50/30 mb-3">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div>
-                                        <h2 className="text-lg font-semibold text-gray-900">
-                                            Schedule Details
-                                        </h2>
-                                        <p className="text-sm text-gray-500">
-                                            Fill in the inspection information
-                                        </p>
-                                    </div>
+                <div className="rounded-3xl p-5 bg-gradient-to-br from-white to-gray-50/30 shadow-xl overflow-hidden backdrop-blur-sm">
+                    {/* Form Header */}
+                    <div className="mb-4">
+                        <h2 className="text-lg font-semibold text-gray-900">
+                            Schedule Details
+                        </h2>
+                        <p className="text-sm text-gray-500">
+                            Fill in the inspection information
+                        </p>
+                    </div>
+
+                    <form onSubmit={handleSubmit} className="space-y-5">
+                        {/* Location Field with Dropdown */}
+                        <div ref={dropdownRef}>
+                            <div className="flex items-center space-x-2 mb-2">
+                                <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
+                                    <MapPin className="h-4 w-4 text-gray-600" />
                                 </div>
+                                <label className="text-sm font-medium text-gray-700">
+                                    Inspection Location *
+                                </label>
+                                {isLoadingLocations && (
+                                    <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+                                )}
+                            </div>
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    name="location"
+                                    value={formData.location}
+                                    onChange={handleLocationChange}
+                                    onFocus={() => setShowDropdown(true)}
+                                    placeholder="Type or select a location"
+                                    autoComplete="off"
+                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 placeholder-gray-400 ${
+                                        errors.location ? "border-red-400/50" : ""
+                                    }`}
+                                />
+                                <ChevronDown
+                                    className={`absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 transition-transform ${
+                                        showDropdown ? "rotate-180" : ""
+                                    }`}
+                                />
+                                {showDropdown && filteredLocations.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-2 bg-white rounded-xl border border-gray-200/50 shadow-lg max-h-60 overflow-y-auto scroll-hide">
+                                        {filteredLocations.map((location, index) => (
+                                            <div
+                                                key={index}
+                                                onClick={() => handleLocationSelect(location)}
+                                                className="px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0 flex items-center space-x-2"
+                                            >
+                                                <MapPin className="h-4 w-4 text-gray-400 shrink-0" />
+                                                <span className="text-gray-700 truncate">{location}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            {errors.location && (
+                                <p className="text-red-500 text-sm mt-1 flex items-center space-x-1">
+                                    <AlertCircle className="w-4 h-4 shrink-0" />
+                                    <span>{errors.location}</span>
+                                </p>
+                            )}
+                            <p className="text-xs text-gray-500 mt-1.5">
+                                {locations.length > 0
+                                    ? "Select from saved locations or type a custom location"
+                                    : "Enter the exact location where inspection will occur"}
+                            </p>
+                        </div>
+
+                        {/* Date & Time Row — stack on small, side by side on md+ */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <div className="flex items-center space-x-2 mb-2">
+                                    <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
+                                        <CalendarDays className="h-4 w-4 text-gray-600" />
+                                    </div>
+                                    <label className="text-sm font-medium text-gray-700">
+                                        Inspection Date *
+                                    </label>
+                                </div>
+                                <input
+                                    type="date"
+                                    name="date"
+                                    value={formData.date}
+                                    onChange={handleChange}
+                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
+                                        errors.date ? "border-red-400/50" : ""
+                                    }`}
+                                />
+                                {errors.date && (
+                                    <p className="text-red-500 text-sm mt-1 flex items-center space-x-1">
+                                        <AlertCircle className="w-4 h-4 shrink-0" />
+                                        <span>{errors.date}</span>
+                                    </p>
+                                )}
                             </div>
 
                             <div>
-                                <form onSubmit={handleSubmit} className="space-y-6">
-                                    {/* Location Field with Dropdown */}
-                                    <div ref={dropdownRef}>
-                                        <div className="flex items-center space-x-2 mb-3">
-                                            <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
-                                                <MapPin className="h-4 w-4 text-gray-600" />
-                                            </div>
-                                            <label className="text-sm font-medium text-gray-700">
-                                                Inspection Location *
-                                            </label>
-                                            {isLoadingLocations && (
-                                                <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
-                                            )}
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                name="location"
-                                                value={formData.location}
-                                                onChange={handleLocationChange}
-                                                onFocus={() => setShowDropdown(true)}
-                                                placeholder="Type or select a location"
-                                                autoComplete="off"
-                                                className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 placeholder-gray-400 ${
-                                                    errors.location ? "border-red-400/50" : ""
-                                                }`}
-                                            />
-                                            <ChevronDown
-                                                className={`absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 transition-transform ${
-                                                    showDropdown ? "rotate-180" : ""
-                                                }`}
-                                            />
-                                            {showDropdown && filteredLocations.length > 0 && (
-                                                <div className="absolute z-10 w-full mt-2 bg-white rounded-xl border border-gray-200/50 shadow-lg max-h-60 overflow-y-auto scroll-hide">
-                                                    {filteredLocations.map((location, index) => (
-                                                        <div
-                                                            key={index}
-                                                            onClick={() => handleLocationSelect(location)}
-                                                            className="px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors border-b border-gray-100 last:border-b-0 flex items-center space-x-2"
-                                                        >
-                                                            <MapPin className="h-4 w-4 text-gray-400" />
-                                                            <span className="text-gray-700">{location}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                        {errors.location && (
-                                            <p className="text-red-500 text-sm flex items-center space-x-1">
-                                                <AlertCircle className="w-4 h-4" />
-                                                <span>{errors.location}</span>
-                                            </p>
-                                        )}
-                                        <p className="text-xs text-gray-500 mt-2">
-                                            {locations.length > 0
-                                                ? "Select from saved locations or type a custom location"
-                                                : "Enter the exact location where inspection will occur"}
-                                        </p>
+                                <div className="flex items-center space-x-2 mb-2">
+                                    <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
+                                        <Clock className="h-4 w-4 text-gray-600" />
                                     </div>
-
-                                    {/* Date & Time Row */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                            <div className="flex items-center space-x-2 mb-2">
-                                                <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
-                                                    <CalendarDays className="h-4 w-4 text-gray-600" />
-                                                </div>
-                                                <label className="text-sm font-medium text-gray-700">
-                                                    Inspection Date *
-                                                </label>
-                                            </div>
-                                            <input
-                                                type="date"
-                                                name="date"
-                                                value={formData.date}
-                                                onChange={handleChange}
-                                                className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                                    errors.date ? "border-red-400/50" : ""
-                                                }`}
-                                            />
-                                            {errors.date && (
-                                                <p className="text-red-500 text-sm mt-2 flex items-center space-x-1">
-                                                    <AlertCircle className="w-4 h-4" />
-                                                    <span>{errors.date}</span>
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        <div>
-                                            <div className="flex items-center space-x-2 mb-3">
-                                                <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
-                                                    <Clock className="h-4 w-4 text-gray-600" />
-                                                </div>
-                                                <label className="text-sm font-medium text-gray-700">
-                                                    Start Time *
-                                                </label>
-                                            </div>
-                                            <input
-                                                type="time"
-                                                name="time"
-                                                value={formData.time}
-                                                onChange={handleChange}
-                                                className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                                    errors.time ? "border-red-400/50" : ""
-                                                }`}
-                                            />
-                                            {errors.time && (
-                                                <p className="text-red-500 text-sm mt-2 flex items-center space-x-1">
-                                                    <AlertCircle className="w-4 h-4" />
-                                                    <span>{errors.time}</span>
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* End Time Field */}
-                                    <div>
-                                        <div className="flex items-center space-x-2 mb-3">
-                                            <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
-                                                <Clock className="h-4 w-4 text-gray-600" />
-                                            </div>
-                                            <label className="text-sm font-medium text-gray-700">
-                                                End Time *
-                                            </label>
-                                        </div>
-                                        <input
-                                            type="time"
-                                            name="endTime"
-                                            value={formData.endTime}
-                                            onChange={handleChange}
-                                            className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                                errors.endTime ? "border-red-400/50" : ""
-                                            }`}
-                                        />
-                                        {errors.endTime && (
-                                            <p className="text-red-500 text-sm flex items-center space-x-1">
-                                                <AlertCircle className="w-4 h-4" />
-                                                <span>{errors.endTime}</span>
-                                            </p>
-                                        )}
-                                        <p className="text-xs text-gray-500 mt-2">
-                                            Must be after the start time (for scheduled) or in the
-                                            future (for immediate)
-                                        </p>
-                                    </div>
-
-                                    {/* Action Buttons */}
-                                    <div className="space-y-3 border-t border-gray-200/30">
-                                        <button
-                                            type="submit"
-                                            disabled={loading || immediateLoading}
-                                            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-emerald-600 hover:to-emerald-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            {loading ? (
-                                                <>
-                                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                                    <span>Creating...</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Calendar className="h-5 w-5" />
-                                                    <span>Create Schedule</span>
-                                                </>
-                                            )}
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={handleCreateImmediately}
-                                            disabled={loading || immediateLoading}
-                                            className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-br from-blue-500 to-cyan-400 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-blue-600 hover:to-cyan-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            {immediateLoading ? (
-                                                <>
-                                                    <Loader2 className="h-5 w-5 animate-spin" />
-                                                    <span>Creating...</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Zap className="h-5 w-5" />
-                                                    <span>Create Immediately</span>
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-                                </form>
+                                    <label className="text-sm font-medium text-gray-700">
+                                        Start Time *
+                                    </label>
+                                </div>
+                                <input
+                                    type="time"
+                                    name="time"
+                                    value={formData.time}
+                                    onChange={handleChange}
+                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
+                                        errors.time ? "border-red-400/50" : ""
+                                    }`}
+                                />
+                                {errors.time && (
+                                    <p className="text-red-500 text-sm mt-1 flex items-center space-x-1">
+                                        <AlertCircle className="w-4 h-4 shrink-0" />
+                                        <span>{errors.time}</span>
+                                    </p>
+                                )}
                             </div>
                         </div>
-                    </div>
+
+                        {/* End Time Field */}
+                        <div>
+                            <div className="flex items-center space-x-2 mb-2">
+                                <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
+                                    <Clock className="h-4 w-4 text-gray-600" />
+                                </div>
+                                <label className="text-sm font-medium text-gray-700">
+                                    End Time *
+                                </label>
+                            </div>
+                            <input
+                                type="time"
+                                name="endTime"
+                                value={formData.endTime}
+                                onChange={handleChange}
+                                className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
+                                    errors.endTime ? "border-red-400/50" : ""
+                                }`}
+                            />
+                            {errors.endTime && (
+                                <p className="text-red-500 text-sm mt-1 flex items-center space-x-1">
+                                    <AlertCircle className="w-4 h-4 shrink-0" />
+                                    <span>{errors.endTime}</span>
+                                </p>
+                            )}
+                            <p className="text-xs text-gray-500 mt-1.5">
+                                Must be after the start time (for scheduled) or in the
+                                future (for immediate)
+                            </p>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="space-y-3 pt-2 border-t border-gray-200/30">
+                            <button
+                                type="submit"
+                                disabled={loading || immediateLoading}
+                                className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-emerald-600 hover:to-emerald-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {loading ? (
+                                    <>
+                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                        <span>Creating...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Calendar className="h-5 w-5" />
+                                        <span>Create Schedule</span>
+                                    </>
+                                )}
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleCreateImmediately}
+                                disabled={loading || immediateLoading}
+                                className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-gradient-to-br from-blue-500 to-cyan-400 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-blue-600 hover:to-cyan-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {immediateLoading ? (
+                                    <>
+                                        <Loader2 className="h-5 w-5 animate-spin" />
+                                        <span>Creating...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Zap className="h-5 w-5" />
+                                        <span>Create Immediately</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
