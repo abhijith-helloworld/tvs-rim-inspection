@@ -1061,7 +1061,7 @@ const Dashboard: React.FC = () => {
             <main className="flex flex-col xl:flex-row gap-6">
 
                 {/* ── Left column: takes full width below xl, half above ── */}
-                <div className="xl:w-1/2 space-y-6">
+                <div className="xl:w-[60%] space-y-6">
 
                     {/* Defect Analysis */}
                     <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
@@ -1190,7 +1190,7 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {/* ── Right column: takes full width below xl, half above ── */}
-                <div className="xl:w-1/2 space-y-6">
+                <div className="xl:w-[40%] space-y-6">
 
                     {/* FIXED: Battery and Robot Location stack on smaller screens,
                         side-by-side only when the right column itself is wide enough */}

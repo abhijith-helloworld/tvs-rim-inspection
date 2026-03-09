@@ -600,6 +600,11 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
     };
 
     const retryHand = (hand: Hand) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) { setError("WebSocket not connected"); return; }
+        ws.send(JSON.stringify({
+            event: `${hand}_hand_retry`,
+            data: { profile_id: selectedProfileId, profile_name: selectedProfile?.name, hand, value: true },
+        }));
         // Reset all action state for this hand back to initial (as if hand was just enabled)
         setHandStarted((prev) => ({ ...prev, [hand]: false }));
         setHandTested((prev) => ({ ...prev, [hand]: false }));
