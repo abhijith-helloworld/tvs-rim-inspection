@@ -18,6 +18,7 @@ import {
 
 import { fetchWithAuth, API_BASE_URL } from "../lib/auth";
 import RobotDashboardHeader from "../Includes/header";
+import Link from "next/link";
 
 /* ===================== TYPES ===================== */
 
@@ -474,13 +475,13 @@ export default function InspectionsBySchedule() {
 
             {/* ── BACK BUTTON ── */}
             <div className="flex-shrink-0 px-4 py-2">
-                <button
-                    onClick={() => router.back()}
+                <Link
+                    href="/schedules"
                     className="flex items-center gap-2 text-sm text-gray-500 hover:text-teal-600 transition-colors font-medium"
                 >
                     <ArrowLeft className="w-4 h-4" />
                     Back to Schedules
-                </button>
+                </Link>
             </div>
 
             {/* ── STAT CARDS ── */}

@@ -5,7 +5,7 @@ import SchedulesList from "./[id]/page";
 import CreateSchedule from "./[id]/_components/Shedulecreat";
 import { tokenStorage, API_BASE_URL, fetchWithAuth } from "../lib/auth";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import RobotDashboardHeader from "../Includes/header";
 
 import type {
@@ -206,18 +206,25 @@ function DashboardContent() {
             if (!result.success)
                 throw new Error(result.message || "Failed to fetch schedules");
 
-            const sorted = [...(result.schedules || [])].sort((a: Schedule, b: Schedule) => {
-                const priorityA = a.status === 'processing' ? 0 : 1;
-                const priorityB = b.status === 'processing' ? 0 : 1;
-                if (priorityA !== priorityB) return priorityA - priorityB;
-                const dateA = new Date(`${a.scheduled_date}T${a.scheduled_time}`).getTime();
-                const dateB = new Date(`${b.scheduled_date}T${b.scheduled_time}`).getTime();
-                return dateB - dateA;
-            });
+            const sorted = [...(result.schedules || [])].sort(
+                (a: Schedule, b: Schedule) => {
+                    const priorityA = a.status === "processing" ? 0 : 1;
+                    const priorityB = b.status === "processing" ? 0 : 1;
+                    if (priorityA !== priorityB) return priorityA - priorityB;
+                    const dateA = new Date(
+                        `${a.scheduled_date}T${a.scheduled_time}`,
+                    ).getTime();
+                    const dateB = new Date(
+                        `${b.scheduled_date}T${b.scheduled_time}`,
+                    ).getTime();
+                    return dateB - dateA;
+                },
+            );
 
             setSchedules(sorted);
             if (result.pagination) setPagination(result.pagination);
-            if (result.schedule_summary) setScheduleSummary(result.schedule_summary);
+            if (result.schedule_summary)
+                setScheduleSummary(result.schedule_summary);
         } catch (err: unknown) {
             const message =
                 err instanceof Error ? err.message : "Failed to load schedules";
@@ -254,15 +261,20 @@ function DashboardContent() {
 
                         if (payload.event === "battery_information") {
                             const soc = Number(payload.data?.soc) || 0;
-                            const current = Number(payload.data?.current) || 0;
-                            const voltage = Number(payload.data?.voltage) || 0;
+                            const current =
+                                Number(payload.data?.current) || 0;
+                            const voltage =
+                                Number(payload.data?.voltage) || 0;
                             const power = Number(payload.data?.power) || 0;
                             const dod = Number(payload.data?.dod) || 0;
                             const status: BatteryStatus["status"] =
-                                current > 0.5 ? "charging"
-                                : soc >= 99 ? "full"
-                                : soc < 20 ? "low"
-                                : "discharging";
+                                current > 0.5
+                                    ? "charging"
+                                    : soc >= 99
+                                      ? "full"
+                                      : soc < 20
+                                        ? "low"
+                                        : "discharging";
                             setBattery({
                                 level: soc,
                                 status,
@@ -276,9 +288,14 @@ function DashboardContent() {
 
                         if (payload.event === "robot_status") {
                             setRobotStatus((prev: any) => ({
-                                break_status: payload.data.break_status ?? prev.break_status,
-                                emergency_status: payload.data.emergency_status ?? prev.emergency_status,
-                                Arm_moving: payload.data.Arm_moving ?? prev.Arm_moving,
+                                break_status:
+                                    payload.data.break_status ??
+                                    prev.break_status,
+                                emergency_status:
+                                    payload.data.emergency_status ??
+                                    prev.emergency_status,
+                                Arm_moving:
+                                    payload.data.Arm_moving ?? prev.Arm_moving,
                             }));
                         }
 
@@ -288,7 +305,10 @@ function DashboardContent() {
                         ) {
                             if (refreshTimeoutRef.current)
                                 clearTimeout(refreshTimeoutRef.current);
-                            refreshTimeoutRef.current = setTimeout(() => fetchSchedules(), 1000);
+                            refreshTimeoutRef.current = setTimeout(
+                                () => fetchSchedules(),
+                                1000,
+                            );
                         }
                     } catch (err) {
                         console.error("❌ WS message parse error:", err);
@@ -314,7 +334,8 @@ function DashboardContent() {
         return () => {
             isManualClose = true;
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
-            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+            if (refreshTimeoutRef.current)
+                clearTimeout(refreshTimeoutRef.current);
             ws?.close();
             wsRef.current = null;
         };
@@ -336,6 +357,11 @@ function DashboardContent() {
         [pagination.total_pages],
     );
 
+    /* ── Back navigation ────────────────────────────────────────── */
+    const handleBack = useCallback(() => {
+        router.back();
+    }, [router]);
+
     /* ── Loading guard ──────────────────────────────────────────── */
     if (!isInitialized || !robotId) {
         return (
@@ -350,7 +376,8 @@ function DashboardContent() {
 
     /* ── Render ─────────────────────────────────────────────────── */
     return (
-        <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50/30 p-4 md:p-6">
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50/30 p-4 md:p-6">
+            {/* ── Header ───────────────────────────────────────────────── */}
             <RobotDashboardHeader
                 title="Robotic Schedule Dashboard"
                 subtitle={`Robot ID: ${robotData?.name ?? "N/A"}`}
@@ -360,62 +387,69 @@ function DashboardContent() {
                 wsConnected={wsConnected}
                 time={time}
             />
+                        <div className="">
+                <button
+                    onClick={handleBack}
+                    className="inline-flex items-center gap-2 text-gray-600 text-sm font-medium group cursor-pointer"
+                >
+                    <ArrowLeft
+                        className="w-4 h-4 text-gray-400 group-hover:text-gray-600 group-hover:-translate-x-0.5 transition-all duration-150"
+                    />
+                    <span>
+                        Back to{" "}
+                        <span className="font-semibold text-gray-800">
+                            {robotData?.name ?? "Robot"}
+                        </span>
+                    </span>
+                </button>
+            </div>
 
-            <div>
-                {/* ── Stats Grid ── */}
-                {/* FIXED: always 2-col on mobile, 4-col on sm+ — no collapsing at 1200 */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                    <div className="bg-blue-50 rounded-2xl border border-blue-100 p-4 md:p-6 transition-all duration-200 hover:shadow-lg shadow-sm backdrop-blur-sm">
-                        <div className="flex flex-col">
-                            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading ? "..." : scheduleSummary.total}
-                            </p>
-                            <p className="text-xs md:text-sm text-gray-600 font-medium">
-                                Total Schedule
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="bg-green-50 rounded-2xl shadow-sm border border-green-100 p-4 md:p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
-                        <div className="flex flex-col">
-                            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading ? "..." : scheduleSummary.completed}
-                            </p>
-                            <p className="text-xs md:text-sm text-gray-600 font-medium">
-                                Completed
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="bg-amber-50 rounded-2xl shadow-sm border border-amber-100 p-4 md:p-6 transition-all duration-200 hover:shadow-lg backdrop-blur-sm">
-                        <div className="flex flex-col">
-                            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading ? "..." : scheduleSummary.scheduled}
-                            </p>
-                            <p className="text-xs md:text-sm text-gray-600 font-medium">
-                                Pending
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="bg-blue-50 rounded-2xl shadow-sm border border-gray-200/50 p-4 md:p-6 transition-all duration-200 hover:shadow-lg hover:border-gray-300 backdrop-blur-sm">
-                        <div className="flex flex-col">
-                            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                                {schedulesLoading ? "..." : scheduleSummary.processing}
-                            </p>
-                            <p className="text-xs md:text-sm text-gray-600 font-medium">
-                                Processing
-                            </p>
-                        </div>
-                    </div>
+            <div className="mt-2">
+                {/* ── Stats Grid ───────────────────────────────────────────
+                      Always 2-col on mobile, 4-col from sm (640px) upward.
+                      No breakpoint collapses between 1024–1280 that would
+                      cause 1-col or 2-col stacking at 1200px.
+                ─────────────────────────────────────────────────────────── */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 mb-6">
+                    <StatCard
+                        label="Total Schedule"
+                        value={schedulesLoading ? "..." : scheduleSummary.total}
+                        bg="bg-blue-50"
+                        border="border-blue-100"
+                    />
+                    <StatCard
+                        label="Completed"
+                        value={schedulesLoading ? "..." : scheduleSummary.completed}
+                        bg="bg-green-50"
+                        border="border-green-100"
+                    />
+                    <StatCard
+                        label="Pending"
+                        value={schedulesLoading ? "..." : scheduleSummary.scheduled}
+                        bg="bg-amber-50"
+                        border="border-amber-100"
+                    />
+                    <StatCard
+                        label="Processing"
+                        value={schedulesLoading ? "..." : scheduleSummary.processing}
+                        bg="bg-sky-50"
+                        border="border-sky-100"
+                    />
                 </div>
 
-                {/* ── Schedule Section ── */}
-                {/* FIXED: sidebar only appears at xl+ (≥1280px) to avoid cramping at 1200px */}
-                <div className="flex flex-col xl:flex-row gap-6">
-                    {/* Schedule list — takes full width below xl */}
+                {/* ── Schedule Section ─────────────────────────────────────
+                      Layout logic:
+                        < 1280px  → stack vertically (list full-width, form below)
+                        ≥ 1280px  → side-by-side: list flex-1, form w-80 sidebar
+
+                      This prevents the cramped 2-column squeeze that occurs at
+                      exactly 1200px when using lg: (1024px) breakpoint.
+                ─────────────────────────────────────────────────────────── */}
+                <div className="flex flex-col xl:flex-row gap-5">
+
+                    {/* Schedule list */}
                     <div className="flex-1 min-w-0">
-                        <div className="rounded-2xl border border-gray-200/50 bg-white shadow-lg overflow-hidden backdrop-blur-sm">
+                        <div className="rounded-2xl border border-gray-200/60 bg-white shadow-sm overflow-hidden">
                             <SchedulesList
                                 robotId={robotId}
                                 robotData={robotData}
@@ -433,10 +467,12 @@ function DashboardContent() {
                         </div>
                     </div>
 
-                    {/* Create form sidebar — full width on mobile/1200, fixed sidebar at xl+ */}
-                    {/* FIXED: w-full on mobile stacks it below; xl:w-80 gives a proper sidebar */}
-                    <div className="xl:w-80 xl:shrink-0">
-                        <div className="rounded-2xl bg-white shadow-lg overflow-hidden backdrop-blur-sm xl:sticky xl:top-20">
+                    {/* Create schedule form
+                          - Full width when stacked (< xl)
+                          - Fixed 320px sidebar when side-by-side (≥ xl / 1280px)
+                          - sticky so it stays visible while scrolling the list   */}
+                    <div className="w-full xl:w-80 xl:shrink-0">
+                        <div className="rounded-2xl bg-white border border-gray-200/60 shadow-sm overflow-hidden xl:sticky xl:top-6">
                             <CreateSchedule
                                 robotId={robotId}
                                 onSuccess={fetchSchedules}
@@ -445,6 +481,29 @@ function DashboardContent() {
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+
+/* ── Extracted StatCard to keep JSX clean ──────────────────────── */
+interface StatCardProps {
+    label: string;
+    value: number | string;
+    bg: string;
+    border: string;
+}
+
+function StatCard({ label, value, bg, border }: StatCardProps) {
+    return (
+        <div
+            className={`${bg} rounded-2xl border ${border} p-4 md:p-5 transition-all duration-200 hover:shadow-md shadow-sm`}
+        >
+            <p className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight mb-1">
+                {value}
+            </p>
+            <p className="text-xs md:text-sm text-gray-600 font-medium">
+                {label}
+            </p>
         </div>
     );
 }

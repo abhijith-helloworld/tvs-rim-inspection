@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Robot } from "../../../types/robot";
 import ArmCalibration from "./armCalibrate";
+import ArmPointsCalibration from "./armPontCalibrate";
+
 import { useState, useEffect, useRef } from "react";
 
 interface RobotCardProps {
@@ -33,6 +35,7 @@ export function RobotCard({
   const [wsConnected, setWsConnected] = useState(false);
   const [isRobotOnline, setIsRobotOnline] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showPointsModal, setShowPointsModal] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -318,20 +321,27 @@ export function RobotCard({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2">
+          <div className="grid grid-cols-1 gap-2">
             <button
               onClick={(e) => { e.stopPropagation(); onViewDetails(localRobot); }}
-              className="flex-1 px-4 py-2 rounded-lg bg-gray-50 text-gray-700 text-sm font-medium hover:bg-gray-100 transition-colors disabled:opacity-50"
+              className="px-4 py-2 rounded-lg bg-gray-50 text-gray-700 text-sm font-medium hover:bg-gray-100 transition-colors disabled:opacity-50"
               disabled={isToggling}
             >
               View Details
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); setShowModal(true); }}
-              className="flex-1 px-4 py-2 rounded-lg bg-purple-50 text-purple-700 text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50"
+              className="px-4 py-2 rounded-lg bg-purple-50 text-purple-700 text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50"
               disabled={isToggling}
             >
               Calibrate
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowPointsModal(true); }}
+              className="px-4 py-2 rounded-lg bg-purple-50 text-purple-700 text-sm font-medium hover:bg-purple-100 transition-colors disabled:opacity-50"
+              disabled={isToggling}
+            >
+              Points Calibrate
             </button>
           </div>
 
@@ -371,6 +381,13 @@ export function RobotCard({
           onClose={() => setShowModal(false)}
         />
       )}
+        {showPointsModal && (
+          <ArmPointsCalibration
+            robotId={localRobot.id}
+            roboId={localRobot.robo_id}
+            onClose={() => setShowPointsModal(false)}
+          />
+        )}
 
       {/* DEACTIVATION CONFIRMATION MODAL */}
       {showDeactivateConfirm && (

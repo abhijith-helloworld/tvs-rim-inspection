@@ -132,7 +132,6 @@ interface DashboardData {
 
 const Dashboard: React.FC = () => {
     const { showModal } = useModal();
-    // Keep showModal stable inside ws closures via a ref
     const showModalRef = useRef(showModal);
     useEffect(() => {
         showModalRef.current = showModal;
@@ -224,7 +223,6 @@ const Dashboard: React.FC = () => {
         return `${hours}h ${minutes}m`;
     };
 
-    // ── Setup WebSocket for a single robot (ws/robot_message/${roboId}/) ──────
     const setupWebSocket = (robot: Robot) => {
         if (!robot.robo_id) {
             console.warn(
@@ -260,7 +258,6 @@ const Dashboard: React.FC = () => {
                     try {
                         const payload = JSON.parse(event.data);
 
-                        // ── robot_deactivated → show global modal ─────────────
                         if (payload.event === "robot_deactivated") {
                             showModalRef.current(
                                 payload.data?.message ??
@@ -268,7 +265,6 @@ const Dashboard: React.FC = () => {
                             );
                         }
 
-                        // ── battery_information ───────────────────────────────
                         if (payload.event === "battery_information") {
                             const soc = Number(payload.data?.soc) || 0;
                             const current = Number(payload.data?.current) || 0;
@@ -356,7 +352,6 @@ const Dashboard: React.FC = () => {
         };
     };
 
-    // ── Setup global robots WebSocket (ws/robots/${userId}/) ─────────────────
     const setupRobotsWebSocket = (userId: number | string) => {
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
         let isManualClose = false;
@@ -385,11 +380,6 @@ const Dashboard: React.FC = () => {
                         ];
 
                         if (robotEvents.includes(payload.event)) {
-                            console.log(
-                                `📡 Robot event: ${payload.event}`,
-                                payload.data,
-                            );
-
                             try {
                                 const response = await fetchWithAuth(
                                     `${API_BASE_URL}/robots/`,
@@ -445,8 +435,6 @@ const Dashboard: React.FC = () => {
                                         }));
 
                                 setRobots((prevRobots) => {
-                                    // Preserve live battery/uptime already streamed
-                                    // via the existing ws/robot_message/${roboId}/ sockets
                                     return formattedRobots.map((newRobot) => {
                                         const existing = prevRobots.find(
                                             (r) => r.id === newRobot.id,
@@ -463,7 +451,6 @@ const Dashboard: React.FC = () => {
                                     });
                                 });
 
-                                // Open ws/robot_message/${roboId}/ for any newly assigned robot
                                 formattedRobots.forEach((robot) => {
                                     if (
                                         robot.robo_id &&
@@ -515,7 +502,6 @@ const Dashboard: React.FC = () => {
         };
     };
 
-    // ── Fetch robots from API ─────────────────────────────────────────────────
     useEffect(() => {
         const fetchRobots = async () => {
             try {
@@ -579,14 +565,12 @@ const Dashboard: React.FC = () => {
                     setSelectedRobotId(formattedRobots[0].id);
                 }
 
-                // Existing per-robot WebSockets (ws/robot_message/${roboId}/)
                 formattedRobots.forEach((robot) => {
                     setupWebSocket(robot);
                 });
 
-                // ── Global robots WebSocket (ws/robots/${userId}/) — started once ──
                 if (!robotsWsRef.current) {
-                    const userId = tokenStorage.getUserId(); // ✅ now reads user_id correctly
+                    const userId = tokenStorage.getUserId();
                     if (userId) {
                         setupRobotsWebSocket(userId);
                     } else {
@@ -610,10 +594,8 @@ const Dashboard: React.FC = () => {
 
         return () => {
             clearInterval(interval);
-            // Close all per-robot WebSockets
             websocketsRef.current.forEach((ws) => ws.close());
             websocketsRef.current.clear();
-            // Close global robots WebSocket
             robotsWsRef.current?.close();
             robotsWsRef.current = null;
         };
@@ -658,56 +640,68 @@ const Dashboard: React.FC = () => {
     const selectedRobot = robots.find((r) => r.id === selectedRobotId);
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white text-slate-800 p-6 md:p-6 font-sans">
-            <header className="mb-6 bg-gray-100 px-3 py-3 rounded-2xl">
-                <div className="flex justify-between items-center">
-                    <div>
-                        <h1 className="text-2xl md:text-3xl font-semibold tracking-tight flex items-center gap-3">
-                            <Cpu className="text-slate-700" size={28} />
-                            <span className="bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white text-slate-800 p-4 md:p-6 font-sans">
+            {/* ── Header ─────────────────────────────────────────────────────── */}
+            <header className="mb-6 bg-gray-100 px-4 py-3 rounded-2xl">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    {/* Title */}
+                    <div className="min-w-0">
+                        <h1 className="text-xl md:text-2xl xl:text-3xl font-semibold tracking-tight flex items-center gap-2 md:gap-3">
+                            <Cpu className="text-slate-700 shrink-0" size={26} />
+                            <span className="bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent truncate">
                                 Robot Fleet Dashboard
                             </span>
                         </h1>
-                        <p className="text-slate-500 text-[17px] mt-1 ml-10 font-light">
+                        <p className="text-slate-500 text-sm md:text-[15px] mt-0.5 ml-9 md:ml-10 font-light">
                             User Dashboard
                         </p>
                     </div>
-                    <div className="flex items-center gap-6">
-                        <div className="text-right">
-                            <div className="flex items-center gap-2 mb-1">
-                                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                                <div className="text-sm font-semibold text-slate-800 bg-gradient-to-r from-slate-800 to-slate-700 bg-clip-text text-transparent">
-                                    {new Date().toLocaleDateString("en-US", {
-                                        weekday: "short",
-                                        month: "short",
-                                        day: "numeric",
-                                        year: "numeric",
-                                    })}
-                                </div>
+
+                    {/* Date / Time */}
+                    <div className="text-right shrink-0">
+                        <div className="flex items-center gap-2 mb-1 justify-end">
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                            <div className="text-sm font-semibold text-slate-800">
+                                {new Date().toLocaleDateString("en-US", {
+                                    weekday: "short",
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                })}
                             </div>
-                            <div className="flex items-center gap-2">
-                                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                <div className="text-xs font-medium text-slate-600 bg-slate-50/80 px-2 py-0.5 rounded border border-slate-200/50">
-                                    {time}
-                                </div>
+                        </div>
+                        <div className="flex items-center gap-2 justify-end">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <div className="text-xs font-medium text-slate-600 bg-slate-50/80 px-2 py-0.5 rounded border border-slate-200/50">
+                                {time}
                             </div>
                         </div>
                     </div>
                 </div>
             </header>
 
+            {/* ── Main Grid ──────────────────────────────────────────────────── */}
+            {/*
+                Breakpoints:
+                  < 1024px  → single column (stacked)
+                  1024–1279 → 3-col grid  (2 + 1) — existing lg behaviour
+                  ≥ 1280px  → 3-col grid  (2 + 1) but with xl: tweaks for comfort
+            */}
             <main className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
-                <div className="lg:col-span-2">
-                    {/* Robots List */}
-                    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 transition-all duration-200 hover:shadow-md hover:border-slate-200">
-                        <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-xl font-semibold flex items-center gap-3">
-                                <div className="p-2 bg-emerald-50 rounded-lg">
+
+                {/* ── Left / Main Column ───────────────────────────────────── */}
+                <div className="lg:col-span-2 flex flex-col gap-4">
+
+                    {/* Robots List card */}
+                    <div className="bg-white rounded-xl p-4 xl:p-6 shadow-sm border border-slate-100 transition-all duration-200 hover:shadow-md hover:border-slate-200">
+
+                        {/* Card header */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                            <h2 className="text-lg xl:text-xl font-semibold flex items-center gap-3">
+                                <div className="p-2 bg-emerald-50 rounded-lg shrink-0">
                                     <Bot className="w-5 h-5 text-emerald-600" />
                                 </div>
-                                <span className="text-slate-800">
-                                    Assigned Robots
-                                </span>
+                                <span className="text-slate-800">Assigned Robots</span>
                                 <div className="flex items-center gap-2">
                                     {loading && (
                                         <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
@@ -719,27 +713,28 @@ const Dashboard: React.FC = () => {
                                     )}
                                 </div>
                             </h2>
-                            <div className="flex gap-3">
-                                <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-sm font-medium">
-                                    {robots.length} Total Robots
+
+                            {/* Status badges — wrap gracefully on narrow viewports */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium whitespace-nowrap">
+                                    {robots.length} Total
                                 </div>
-                                <div className="px-3 py-1.5 rounded-lg bg-emerald-100 border border-emerald-200 text-emerald-700 text-sm font-medium">
+                                <div className="px-2.5 py-1.5 rounded-lg bg-emerald-100 border border-emerald-200 text-emerald-700 text-xs font-medium whitespace-nowrap">
                                     {activeRobotsCount} Active
                                 </div>
-                                <div className="px-3 py-1.5 rounded-lg bg-red-100 border border-red-200 text-red-700 text-sm font-medium">
+                                <div className="px-2.5 py-1.5 rounded-lg bg-red-100 border border-red-200 text-red-700 text-xs font-medium whitespace-nowrap">
                                     {offlineRobotsCount} Offline
                                 </div>
                             </div>
                         </div>
 
-                        <div className="space-y-4">
+                        {/* Robot list */}
+                        <div className="space-y-3">
                             {loading && robots.length === 0 ? (
                                 <div className="flex items-center justify-center py-12">
                                     <div className="flex flex-col items-center gap-3">
                                         <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
-                                        <p className="text-slate-500">
-                                            Loading robot fleet...
-                                        </p>
+                                        <p className="text-slate-500">Loading robot fleet...</p>
                                     </div>
                                 </div>
                             ) : robots.length === 0 ? (
@@ -751,151 +746,123 @@ const Dashboard: React.FC = () => {
                                         No Active Robots Found
                                     </h3>
                                     <p className="text-slate-500 mb-4">
-                                        No active robots are currently
-                                        registered in the system.
+                                        No active robots are currently registered in the system.
                                     </p>
                                 </div>
                             ) : (
                                 robots.map((robot) => (
-                                    <div
-                                        key={robot.id}
-                                        className="group relative"
-                                    >
+                                    <div key={robot.id} className="group relative">
                                         <div
-                                            onClick={() =>
-                                                handleRobotClick(robot.id)
-                                            }
-                                            className={`relative p-4 rounded-lg border cursor-pointer transition-all duration-200 hover:shadow-sm ${
+                                            onClick={() => handleRobotClick(robot.id)}
+                                            className={`relative p-3 xl:p-4 rounded-lg border cursor-pointer transition-all duration-200 hover:shadow-sm ${
                                                 selectedRobotId === robot.id
                                                     ? "border-emerald-400 bg-emerald-50/50 shadow-sm"
                                                     : "border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30"
                                             }`}
                                         >
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="relative">
+                                            <div className="flex items-center justify-between gap-3 min-w-0">
+                                                {/* Left: icon + name + meta */}
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="relative shrink-0">
                                                         <div
-                                                            className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                                                                selectedRobotId ===
-                                                                robot.id
+                                                            className={`w-10 h-10 xl:w-12 xl:h-12 rounded-xl flex items-center justify-center ${
+                                                                selectedRobotId === robot.id
                                                                     ? "bg-gradient-to-br from-emerald-100 to-emerald-200"
                                                                     : "bg-gradient-to-br from-slate-100 to-slate-200"
                                                             }`}
                                                         >
                                                             <Bot
                                                                 className={
-                                                                    selectedRobotId ===
-                                                                    robot.id
+                                                                    selectedRobotId === robot.id
                                                                         ? "text-emerald-600"
                                                                         : "text-slate-400"
                                                                 }
+                                                                size={20}
                                                             />
                                                         </div>
                                                         <div
                                                             className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${
-                                                                robot.status ===
-                                                                "active"
+                                                                robot.status === "active"
                                                                     ? "bg-emerald-500 animate-pulse"
-                                                                    : robot.status ===
-                                                                        "idle"
+                                                                    : robot.status === "idle"
                                                                       ? "bg-amber-500"
-                                                                      : robot.status ===
-                                                                          "offline"
+                                                                      : robot.status === "offline"
                                                                         ? "bg-slate-400"
                                                                         : "bg-rose-500"
                                                             }`}
                                                         />
                                                     </div>
 
-                                                    <div>
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <h3
-                                                                className={`font-semibold transition-colors ${
-                                                                    selectedRobotId ===
-                                                                    robot.id
-                                                                        ? "text-emerald-700"
-                                                                        : "text-slate-900 group-hover:text-emerald-700"
-                                                                }`}
-                                                            >
-                                                                {robot.name}
-                                                            </h3>
-                                                        </div>
+                                                    <div className="min-w-0">
+                                                        <h3
+                                                            className={`font-semibold text-sm xl:text-base truncate transition-colors ${
+                                                                selectedRobotId === robot.id
+                                                                    ? "text-emerald-700"
+                                                                    : "text-slate-900 group-hover:text-emerald-700"
+                                                            }`}
+                                                        >
+                                                            {robot.name}
+                                                        </h3>
 
-                                                        <div className="flex items-center gap-4 text-sm">
+                                                        <div className="flex flex-wrap items-center gap-3 text-xs xl:text-sm mt-0.5">
                                                             <div className="flex items-center gap-1.5">
                                                                 <Battery
-                                                                    className={`w-4 h-4 ${
-                                                                        robot.battery >
-                                                                        50
+                                                                    className={`w-3.5 h-3.5 shrink-0 ${
+                                                                        robot.battery > 50
                                                                             ? "text-emerald-500"
-                                                                            : robot.battery >
-                                                                                20
+                                                                            : robot.battery > 20
                                                                               ? "text-amber-500"
                                                                               : "text-rose-500"
                                                                     }`}
                                                                 />
                                                                 <span
                                                                     className={`font-medium ${
-                                                                        robot.battery >
-                                                                        50
+                                                                        robot.battery > 50
                                                                             ? "text-emerald-600"
-                                                                            : robot.battery >
-                                                                                20
+                                                                            : robot.battery > 20
                                                                               ? "text-amber-600"
                                                                               : "text-rose-600"
                                                                     }`}
                                                                 >
-                                                                    {
-                                                                        robot.battery
-                                                                    }
-                                                                    %
+                                                                    {robot.battery}%
                                                                 </span>
                                                             </div>
                                                             <div className="flex items-center gap-1.5">
-                                                                <Clock className="w-4 h-4 text-slate-400" />
+                                                                <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                                                 <span className="text-slate-600">
-                                                                    {
-                                                                        robot.uptime
-                                                                    }
+                                                                    {robot.uptime}
                                                                 </span>
                                                             </div>
                                                         </div>
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-4">
+                                                {/* Right: status badge + chevron */}
+                                                <div className="flex items-center gap-2 shrink-0">
                                                     <div
-                                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                                                            robot.status ===
-                                                            "active"
+                                                        className={`px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap ${
+                                                            robot.status === "active"
                                                                 ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                                                : robot.status ===
-                                                                    "idle"
+                                                                : robot.status === "idle"
                                                                   ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                                                  : robot.status ===
-                                                                      "offline"
+                                                                  : robot.status === "offline"
                                                                     ? "bg-slate-100 text-slate-700 border border-slate-300"
                                                                     : "bg-rose-50 text-rose-700 border border-rose-200"
                                                         }`}
                                                     >
-                                                        {robot.status
-                                                            .charAt(0)
-                                                            .toUpperCase() +
-                                                            robot.status.slice(
-                                                                1,
-                                                            )}
+                                                        {robot.status.charAt(0).toUpperCase() +
+                                                            robot.status.slice(1)}
                                                     </div>
 
                                                     <div
                                                         className={`transition-opacity duration-200 ${
-                                                            selectedRobotId ===
-                                                            robot.id
+                                                            selectedRobotId === robot.id
                                                                 ? "opacity-100"
                                                                 : "opacity-0 group-hover:opacity-100"
                                                         }`}
                                                     >
                                                         <svg
-                                                            className="w-5 h-5 text-emerald-500"
+                                                            className="w-4 h-4 text-emerald-500"
                                                             fill="none"
                                                             stroke="currentColor"
                                                             viewBox="0 0 24 24"
@@ -910,13 +877,12 @@ const Dashboard: React.FC = () => {
                                                     </div>
                                                 </div>
                                             </div>
+
                                             {selectedRobotId === robot.id && (
                                                 <div className="mt-2 text-xs text-emerald-600 flex items-center gap-1">
-                                                    <Eye className="w-3 h-3" />
+                                                    <Eye className="w-3 h-3 shrink-0" />
                                                     <span>
-                                                        Click again to view
-                                                        details • Inspection
-                                                        summary shown on right →
+                                                        Click again to view details • Inspection summary shown on right →
                                                     </span>
                                                 </div>
                                             )}
@@ -926,32 +892,29 @@ const Dashboard: React.FC = () => {
                             )}
                         </div>
                     </div>
+
+                    {/* Logout button */}
                     <button
                         onClick={handleLogout}
-                        className="w-full mt-3 flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors border border-red-200"
+                        className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors border border-red-200"
                     >
-                        <LogOut className="h-5 w-5" />
+                        <LogOut className="h-5 w-5 shrink-0" />
                         <span className="font-medium">Logout</span>
                     </button>
                 </div>
 
-                {/* Right Column - Defect Analysis */}
+                {/* ── Right Column — Inspection Summary ────────────────────── */}
                 <div className="lg:col-span-1">
-                    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 transition-all duration-200 hover:shadow-md hover:border-slate-200">
-                        <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-xl font-semibold flex items-center gap-3">
-                                <BarChart3
-                                    className="text-amber-500/80"
-                                    size={24}
-                                />
-                                <span className="text-slate-800">
-                                    Inspection Summary
-                                </span>
+                    <div className="bg-white rounded-xl p-4 xl:p-6 shadow-sm border border-slate-100 transition-all duration-200 hover:shadow-md hover:border-slate-200">
+
+                        {/* Card header */}
+                        <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+                            <h2 className="text-lg xl:text-xl font-semibold flex items-center gap-2">
+                                <BarChart3 className="text-amber-500/80 shrink-0" size={22} />
+                                <span className="text-slate-800">Inspection Summary</span>
                             </h2>
-                            <div className="px-3 py-1.5 bg-slate-50 rounded-lg text-xs font-medium border border-slate-200/50">
-                                <span className="text-slate-600">
-                                    Scan Success:{" "}
-                                </span>
+                            <div className="px-2.5 py-1.5 bg-slate-50 rounded-lg text-xs font-medium border border-slate-200/50 whitespace-nowrap">
+                                <span className="text-slate-600">Scan Success: </span>
                                 <span className="text-emerald-600 font-semibold">
                                     {data.defects.totalScanned > 0
                                         ? (
@@ -966,132 +929,117 @@ const Dashboard: React.FC = () => {
                             </div>
                         </div>
 
+                        {/* Selected robot indicator */}
                         {selectedRobot && (
                             <div className="mb-4 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
-                                <div className="flex items-center gap-2">
-                                    <Bot className="w-4 h-4 text-emerald-600" />
-                                    <span className="text-sm font-medium text-emerald-900">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <Bot className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    <span className="text-sm font-medium text-emerald-900 truncate">
                                         Showing data for: {selectedRobot.name}
                                     </span>
                                 </div>
                             </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-4">
-                            <div className="bg-slate-50/70 p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">
-                                <div className="flex items-center justify-between">
+                        {/* Metric cards
+                              On lg (1024-1279): single column stack
+                              On xl (≥1280): 2-column grid for compact display  */}
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                            <div className="bg-slate-50/70 p-3 xl:p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">
+                                <div className="flex items-center justify-between mb-1">
                                     <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">
                                         Total Detected
                                     </h3>
-                                    <AlertTriangle
-                                        className="text-rose-500/80"
-                                        size={18}
-                                    />
+                                    <AlertTriangle className="text-rose-500/80 shrink-0" size={16} />
                                 </div>
-                                <div className="text-2xl font-bold mt-2 text-slate-900">
+                                <div className="text-2xl font-bold text-slate-900">
                                     {data.defects.totalDetected}
                                 </div>
-                                <div className="text-xs text-slate-500 mt-0.5">
-                                    Defects found
-                                </div>
+                                <div className="text-xs text-slate-500 mt-0.5">Defects found</div>
                             </div>
 
-                            <div className="bg-slate-50/70 p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">
-                                <div className="flex items-center justify-between">
+                            <div className="bg-slate-50/70 p-3 xl:p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">
+                                <div className="flex items-center justify-between mb-1">
                                     <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">
                                         Total Scanned
                                     </h3>
-                                    <HardDrive
-                                        className="text-blue-500/80"
-                                        size={18}
-                                    />
+                                    <HardDrive className="text-blue-500/80 shrink-0" size={16} />
                                 </div>
-                                <div className="text-2xl font-bold mt-2 text-slate-900">
+                                <div className="text-2xl font-bold text-slate-900">
                                     {data.defects.totalScanned}
                                 </div>
-                                <div className="text-xs text-slate-500 mt-0.5">
-                                    RIMs inspected
-                                </div>
+                                <div className="text-xs text-slate-500 mt-0.5">RIMs inspected</div>
                             </div>
 
-                            <div className="bg-rose-50/50 p-4 rounded-lg border border-rose-200/30 transition-all duration-150 hover:bg-rose-50/70">
-                                <div className="flex items-center justify-between">
+                            <div className="bg-rose-50/50 p-3 xl:p-4 rounded-lg border border-rose-200/30 transition-all duration-150 hover:bg-rose-50/70">
+                                <div className="flex items-center justify-between mb-1">
                                     <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">
                                         Critical Defects
                                     </h3>
-                                    <AlertTriangle
-                                        className="text-rose-600/80"
-                                        size={18}
-                                    />
+                                    <AlertTriangle className="text-rose-600/80 shrink-0" size={16} />
                                 </div>
-                                <div className="text-2xl font-bold mt-2 text-rose-700">
+                                <div className="text-2xl font-bold text-rose-700">
                                     {data.defects.criticalDefects}
                                 </div>
-                                <div className="text-xs text-slate-500 mt-0.5">
-                                    Immediate action required
-                                </div>
+                                <div className="text-xs text-slate-500 mt-0.5">Immediate action required</div>
                             </div>
 
-                            <div className="bg-amber-50/50 p-4 rounded-lg border border-amber-200/30 transition-all duration-150 hover:bg-amber-50/70">
-                                <div className="flex items-center justify-between">
+                            <div className="bg-amber-50/50 p-3 xl:p-4 rounded-lg border border-amber-200/30 transition-all duration-150 hover:bg-amber-50/70">
+                                <div className="flex items-center justify-between mb-1">
                                     <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">
                                         No Defects
                                     </h3>
-                                    <AlertTriangle
-                                        className="text-amber-600/80"
-                                        size={18}
-                                    />
+                                    <AlertTriangle className="text-amber-600/80 shrink-0" size={16} />
                                 </div>
-                                <div className="text-2xl font-bold mt-2 text-amber-700">
+                                <div className="text-2xl font-bold text-amber-700">
                                     {data.defects.minorDefects}
                                 </div>
-                                <div className="text-xs text-slate-500 mt-0.5">
-                                    Can be scheduled
-                                </div>
+                                <div className="text-xs text-slate-500 mt-0.5">Can be scheduled</div>
                             </div>
                         </div>
 
-                        <div className="mt-8 pt-6 border-t border-slate-200/50">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex items-center gap-3">
-                                    <Activity
-                                        className="text-violet-500/80"
-                                        size={20}
-                                    />
-                                    <div>
-                                        <h3 className="font-medium text-slate-800">
-                                            Defect Rate
-                                        </h3>
-                                        <p className="text-sm text-slate-500">
-                                            {defectRate.toFixed(2)}% of scanned
-                                            items have defects
-                                        </p>
+                        {/* Defect rate summary */}
+                        <div className="mt-6 pt-5 border-t border-slate-200/50">
+                            <div className="flex flex-col gap-3">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <Activity className="text-violet-500/80 shrink-0" size={18} />
+                                        <div className="min-w-0">
+                                            <h3 className="font-medium text-slate-800 text-sm xl:text-base">
+                                                Defect Rate
+                                            </h3>
+                                            <p className="text-xs text-slate-500">
+                                                {defectRate.toFixed(2)}% of scanned items have defects
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="px-2.5 py-1.5 bg-slate-50 rounded-lg border border-slate-200/50 shrink-0">
+                                        <span className="text-slate-600 text-xs">Higher: </span>
+                                        <span
+                                            className={`font-semibold text-xs ${
+                                                higherDefect === "Critical"
+                                                    ? "text-rose-600"
+                                                    : "text-amber-600"
+                                            }`}
+                                        >
+                                            {higherDefect}
+                                        </span>
+                                        <span className="text-slate-500 text-xs ml-1">
+                                            (
+                                            {higherDefect === "Critical"
+                                                ? data.defects.criticalDefects
+                                                : data.defects.minorDefects}
+                                            )
+                                        </span>
                                     </div>
                                 </div>
-                                <div className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-200/50">
-                                    <span className="text-slate-600 text-sm">
-                                        Higher defect count:{" "}
-                                    </span>
-                                    <span
-                                        className={`font-semibold ${higherDefect === "Critical" ? "text-rose-600" : "text-amber-600"}`}
-                                    >
-                                        {higherDefect}
-                                    </span>
-                                    <span className="text-slate-500 text-sm ml-1">
-                                        (
-                                        {higherDefect === "Critical"
-                                            ? data.defects.criticalDefects
-                                            : data.defects.minorDefects}
-                                        )
-                                    </span>
-                                </div>
-                            </div>
 
-                            <div className="mt-4 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-gradient-to-r from-rose-400/90 to-amber-400/90 rounded-full"
-                                    style={{ width: `${defectRate}%` }}
-                                ></div>
+                                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-rose-400/90 to-amber-400/90 rounded-full transition-all duration-500"
+                                        style={{ width: `${defectRate}%` }}
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
