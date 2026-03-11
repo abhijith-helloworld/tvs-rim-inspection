@@ -76,7 +76,7 @@ const OperationModeButton = ({ mode }: { mode: OperationMode | null | undefined 
 
     return (
         <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 ${cs.bg} ${cs.border} ${cs.text}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 whitespace-nowrap ${cs.bg} ${cs.border} ${cs.text}`}
             title={`Operation Mode: ${mode?.mode ?? "Unknown"}`}
         >
             <Settings className={`w-4 h-4 ${cs.icon}`} />
@@ -117,7 +117,7 @@ const BatteryIndicator = ({
 
     return (
         <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 ${cs.bg} ${cs.border} ${cs.text}`}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 whitespace-nowrap ${cs.bg} ${cs.border} ${cs.text}`}
             title={`Min required: ${minimumCharge}%`}
         >
             <div className="relative flex items-center">
@@ -144,7 +144,7 @@ const BatteryIndicator = ({
 
 const ConnectionStatus = ({ wsConnected }: { wsConnected: boolean }) => (
     <div
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 ${
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all duration-300 whitespace-nowrap ${
             wsConnected
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                 : "bg-rose-50 text-rose-700 border-rose-200"
@@ -212,7 +212,7 @@ const RobotStatusPanel = ({ robotStatus: incoming }: { robotStatus: RobotStatus 
                 .status-blink { animation: status-blink 0.6s ease-in-out 1; }
             `}</style>
 
-            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm w-full lg:w-auto">
+            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex-shrink-0">
                 {/* Brake */}
                 <div className="flex items-center gap-2">
                     <div className={`relative ${blinking.break_status ? "status-blink" : ""}`}>
@@ -265,7 +265,7 @@ const RobotStatusPanel = ({ robotStatus: incoming }: { robotStatus: RobotStatus 
    ================================================================ */
 
 const DateTimeDisplay = ({ time }: { time: string }) => (
-    <div className="text-right w-full lg:w-auto">
+    <div className="text-right flex-shrink-0">
         <div className="flex items-center gap-2 mb-1">
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
             <div className="text-sm font-semibold text-slate-800">
@@ -339,9 +339,6 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                 })
                 .then((result) => {
                     if (!result) { setIsLoadingMode(false); return; }
-
-                    console.log("[operation-mode] Full API response:", result);
-
                     let mode: OperationMode | null = null;
                     if (result?.data?.operation_mode)   { mode = result.data.operation_mode; }
                     else if (result?.operation_mode)    { mode = result.operation_mode; }
@@ -381,8 +378,6 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
         }
 
         const url = `${API_BASE_URL}/robots/${robotData.id}/`;
-        console.log(`[min-battery] Fetching: ${url}`);
-
         fetchWithAuth(url, {
             method: "GET",
             headers: { "Content-Type": "application/json" },
@@ -398,9 +393,6 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
             })
             .then((result) => {
                 if (!result) return;
-
-                console.log("[min-battery] API response:", result);
-
                 let minCharge: number | null = null;
 
                 // Shape 1: flat  { minimum_battery_charge: 90 }
@@ -421,7 +413,6 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                 }
 
                 if (minCharge !== null) {
-                    console.log(`[min-battery] Updating minimumCharge → ${minCharge}%`);
                     setLiveMinimumCharge(minCharge);
                 } else {
                     console.warn("[min-battery] Could not extract minimum_battery_charge from:", result);
@@ -468,9 +459,6 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
             } catch {
                 return;
             }
-
-            console.log("[ws-header] Received event:", message.event, message);
-
             /* ── operation_mode_updated ─────────────────────────────── */
             if (message.event === "operation_mode_updated") {
                 const robotId = message.data?.robot_id ?? robotData?.id;
@@ -491,12 +479,9 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                  ② Call API for authoritative confirm (fire-and-forget)
             ─────────────────────────────────────────────────────────── */
             if (message.event === "min_battery_updated") {
-                console.log("[min-battery] WS event received:", message.data);
-
                 // ① Fast path — inline value present
                 const inlineValue = message.data?.minimum_battery_charge;
                 if (typeof inlineValue === "number") {
-                    console.log(`[min-battery] Inline value → ${inlineValue}%`);
                     setLiveMinimumCharge(inlineValue);
                 }
 
@@ -511,34 +496,37 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
 
     return (
         <header className="mb-3">
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-gradient-to-r from-gray-50 to-gray-100 px-3 py-3 rounded-2xl border border-slate-200 shadow-sm transition-all duration-300">
-                {/* Title + Subtitle */}
-                <div>
-                    <h1 className="text-2xl md:text-3xl font-semibold tracking-tight flex items-center gap-3">
-                        <Icon className="text-slate-700" size={28} />
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 bg-gradient-to-r from-gray-50 to-gray-100 px-4 py-4 rounded-2xl border border-slate-200 shadow-sm transition-all duration-300">
+                {/* Left: Title + Subtitle */}
+                <div className="flex-shrink-0">
+                    <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight flex items-center gap-3">
+                        <Icon className="text-slate-700 flex-shrink-0" size={28} />
                         <span className="bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
                             {title}
                         </span>
                     </h1>
-                    <p className="text-slate-500 text-[17px] mt-1 ml-10 font-light">
+                    <p className="text-slate-500 text-sm sm:text-[17px] mt-1 ml-10 font-light">
                         {subtitle ?? `Robot ID: ${robotData?.name}`}
                     </p>
                 </div>
 
-                {/* Right-side controls */}
-                <div className="flex flex-col md:flex-row lg:flex-row items-start md:items-center lg:items-center gap-3 md:gap-4 w-full lg:w-auto">
-                    <div className="flex flex-row items-center gap-3 w-full md:w-auto">
-                        <ConnectionStatus wsConnected={wsConnected} />
-                        <BatteryIndicator
-                            level={battery.level}
-                            status={battery.status}
-                            minimumCharge={minimumCharge}
-                        />
-                        <div className={`transition-opacity duration-300 ${isLoadingMode ? "opacity-60" : "opacity-100"}`}>
-                            <OperationModeButton mode={operationMode} />
+                {/* Right: Controls Grid */}
+                <div className="flex flex-col gap-3 w-full lg:w-auto lg:flex-shrink-0">
+                    {/* Top Row: Connection, Battery, Operation Mode */}
+                        <div className="flex flex-wrap justify-end items-center gap-2 sm:gap-3">
+                            <ConnectionStatus wsConnected={wsConnected} />
+                            <BatteryIndicator
+                                level={battery.level}
+                                status={battery.status}
+                                minimumCharge={minimumCharge}
+                            />
+                            <div className={`transition-opacity duration-300 ${isLoadingMode ? "opacity-60" : "opacity-100"}`}>
+                                <OperationModeButton mode={operationMode} />
+                            </div>
                         </div>
-                    </div>
-                    <div className="flex flex-row items-center justify-between md:justify-start gap-3 md:gap-4 w-full md:w-auto">
+
+                    {/* Bottom Row: Robot Status Panel, Date/Time */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
                         <RobotStatusPanel robotStatus={robotStatus} />
                         <DateTimeDisplay time={time} />
                     </div>

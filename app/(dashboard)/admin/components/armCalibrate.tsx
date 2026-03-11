@@ -172,9 +172,9 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
     const [newProfileName, setNewProfileName] = useState("");
     const [showCreateForm, setShowCreateForm] = useState(false);
 
-    // Calibration state
-    const [calibrationActive, setCalibrationActive] = useState(false);
-    const [handsReady, setHandsReady] = useState(false);
+    // ========== HAND STATE MANAGEMENT ==========
+    // CRITICAL: hands tracks which hand is ACTIVE (enabled)
+    // Only ONE hand should be true at a time
     const [hands, setHands] = useState<HandState>(INITIAL_HAND_STATE);
 
     // Tracks which hands have been tested (locked until test_completed received)
@@ -185,6 +185,11 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
 
     // Tracks which hands have been started (Start clicked, awaiting Stop)
     const [handStarted, setHandStarted] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
+    // ============================================
+
+    // Calibration state
+    const [calibrationActive, setCalibrationActive] = useState(false);
+    const [handsReady, setHandsReady] = useState(false);
 
     // Camera state
     const [activeHandCamera, setActiveHandCamera] = useState<Hand | null>(null);
@@ -280,7 +285,21 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
                     const data: WebSocketMessage = JSON.parse(event.data);
 
                     if (data.type === "hand_toggle" && data.hand !== undefined && data.active !== undefined) {
-                        setHands((prev) => ({ ...prev, [data.hand!]: data.active! }));
+                        setHands((prev) => {
+                            const newState = { ...prev };
+                            
+                            if (data.active) {
+                                // Activating a hand: set it to true and disable the other
+                                newState[data.hand!] = true;
+                                const otherHand = data.hand === "left" ? "right" : "left";
+                                newState[otherHand] = false;
+                            } else {
+                                // Deactivating a hand: set it to false
+                                newState[data.hand!] = false;
+                            }
+                            
+                            return newState;
+                        });
                         setWsMessage(`${data.hand} hand ${data.active ? "enabled" : "disabled"}`);
                         setTimeout(() => setWsMessage(null), 3000);
                     } else if ((data as any).event === "calibration_status") {
@@ -377,14 +396,10 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
                 resetCalibrationState();
                 clearReadyForDataCollection();
             } else {
+                // Only reset hand states if handsReady is false
                 setHandsReady((currentReady) => {
                     if (!currentReady) {
                         setHands(INITIAL_HAND_STATE);
-                    } else {
-                        setHands({
-                            left: Boolean(d.left_hand_active),
-                            right: Boolean(d.right_hand_active),
-                        });
                     }
                     return currentReady;
                 });
@@ -536,27 +551,44 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
         await toggleCalibration(!calibrationActive);
     };
 
+    /**
+     * FIXED: onHandToggle now properly manages exclusive hand selection
+     * - Only ONE hand can be active at a time
+     * - When activating left, right is deactivated (and vice versa)
+     * - Button color reflects the active state correctly
+     */
     const onHandToggle = async (hand: Hand) => {
         if (!calibrationActive) { setError("Calibration must be active to toggle hands"); return; }
         if (!handsReady) { setError("Waiting for ready_for_data_collection event..."); return; }
-        const next = !hands[hand];
+        
+        const isCurrentlyActive = hands[hand];
         const otherHand: Hand = hand === "left" ? "right" : "left";
 
-        if (next && hands[otherHand]) {
-            // Deactivate other hand — update local state immediately, skip server refetch
-            await toggleHand(otherHand, false);
-            setHands((prev) => ({ ...prev, [otherHand]: false }));
-            setHandStarted((prev) => ({ ...prev, [otherHand]: false }));
-            setHandTested((prev) => ({ ...prev, [otherHand]: false }));
-            setTestCompleted((prev) => ({ ...prev, [otherHand]: false }));
-        }
+        // If clicking to activate this hand
+        if (!isCurrentlyActive) {
+            // Deactivate the other hand first (if it's active)
+            if (hands[otherHand]) {
+                await toggleHand(otherHand, false);
+                // Update state immediately to show deactivation
+                setHands((prev) => ({ ...prev, [otherHand]: false }));
+                // Reset other hand's test states
+                setHandStarted((prev) => ({ ...prev, [otherHand]: false }));
+                setHandTested((prev) => ({ ...prev, [otherHand]: false }));
+                setTestCompleted((prev) => ({ ...prev, [otherHand]: false }));
+            }
 
-        const success = await toggleHand(hand, next);
-        if (success) {
-            // Only update THIS hand — never touch the other hand's state here
-            setHands((prev) => ({ ...prev, [hand]: next }));
-            if (!next) {
-                // Hand was turned off, reset its action state
+            // Now activate the clicked hand
+            const success = await toggleHand(hand, true);
+            if (success) {
+                // Update this hand to active
+                setHands((prev) => ({ ...prev, [hand]: true }));
+            }
+        } else {
+            // Clicking to deactivate this hand
+            const success = await toggleHand(hand, false);
+            if (success) {
+                setHands((prev) => ({ ...prev, [hand]: false }));
+                // Reset this hand's test states
                 setHandStarted((prev) => ({ ...prev, [hand]: false }));
                 setHandTested((prev) => ({ ...prev, [hand]: false }));
                 setTestCompleted((prev) => ({ ...prev, [hand]: false }));
@@ -605,7 +637,7 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
             event: `${hand}_hand_retry`,
             data: { profile_id: selectedProfileId, profile_name: selectedProfile?.name, hand, value: true },
         }));
-        // Reset all action state for this hand back to initial (as if hand was just enabled)
+        // Reset all action state for this hand back to initial
         setHandStarted((prev) => ({ ...prev, [hand]: false }));
         setHandTested((prev) => ({ ...prev, [hand]: false }));
         setTestCompleted((prev) => ({ ...prev, [hand]: false }));
@@ -904,14 +936,14 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
                                             <div className="grid grid-cols-2 gap-6">
                                                 {HANDS.map((hand) => (
                                                     <div key={hand} className="bg-white rounded-lg border border-gray-200 p-6">
-                                                        {/* Hand toggle */}
+                                                        {/* Hand toggle button - FIXED: Only shows green when THIS hand is active */}
                                                         <button
                                                             type="button"
                                                             disabled={!calibrationActive || !handsReady || loading}
                                                             onClick={() => onHandToggle(hand)}
                                                             className={`w-full px-4 py-3 rounded-lg font-medium transition-all ${
                                                                 hands[hand]
-                                                                    ? "bg-emerald-600 text-white shadow-sm"
+                                                                    ? "bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
                                                                     : !handsReady
                                                                         ? "bg-gray-200 text-gray-400 cursor-not-allowed"
                                                                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -923,7 +955,7 @@ export default function ArmCalibration({ robotId, roboId, onClose }: RobotCalibr
                                                             )}
                                                         </button>
 
-                                                        {/* Start / Stop / Test / Retry — shown when hand is active */}
+                                                        {/* Start / Stop / Test / Retry — shown when THIS hand is active */}
                                                         {hands[hand] && (
                                                             <div className="grid grid-cols-4 gap-2 mt-4">
                                                                 {/* Start */}

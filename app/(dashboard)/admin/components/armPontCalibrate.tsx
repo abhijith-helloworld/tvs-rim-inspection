@@ -2113,7 +2113,7 @@ export default function ArmCalibration({
                             <button
                                 onClick={closeTestModal}
                                 disabled={loading}
-                                className="w-full mt-6 px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 disabled:opacity-50 transition-all"
+                                className="w-full mt-3 px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 disabled:opacity-50 transition-all"
                             >
                                 Close
                             </button>

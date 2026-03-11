@@ -7,7 +7,6 @@ function getTokenExpiry(token: string): number {
     );
     const now = Math.floor(Date.now() / 1000);
     const remaining = payload.exp - now;
-    console.log("Token expires in:", remaining, "seconds");
     // ❌ Already expired
     if (remaining <= 0) return -1;
     return remaining;
@@ -25,25 +24,19 @@ export async function GET(request: NextRequest) {
 
     token = token?.trim() || "";
     role = role?.replace(/'/g, "").trim().toUpperCase() || "";
-    console.log("startttt")
-    console.log(token)
 
     if (!token || role !== "ADMIN") {
       return NextResponse.redirect(`${BASE_URL}/login`);
     }else{
 
-    console.log("testinggggggggggggggggggg")
 
     // ✅ Check token is not expired before setting cookie
     const maxAge = getTokenExpiry(token);
     if (maxAge <= 0) {
-      console.log("❌ Expired token passed from app");
       return NextResponse.redirect(`${BASE_URL}/login`);
     }
 
-    const response = NextResponse.redirect(`${BASE_URL}/admin`);
-      console.log("get the response...");
-     
+    const response = NextResponse.redirect(`${BASE_URL}/admin`);     
     response.cookies.set("access_token", token, {
       httpOnly: true,
       secure: false,
