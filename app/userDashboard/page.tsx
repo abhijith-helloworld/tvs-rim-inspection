@@ -944,7 +944,7 @@ const Dashboard: React.FC = () => {
                         {/* Metric cards
                               On lg (1024-1279): single column stack
                               On xl (≥1280): 2-column grid for compact display  */}
-                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 xl:grid-cols-1 gap-3">
                             <div className="bg-slate-50/70 p-3 xl:p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">
                                 <div className="flex items-center justify-between mb-1">
                                     <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">

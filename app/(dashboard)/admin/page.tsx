@@ -26,11 +26,6 @@ export default function RobotManagementPage() {
     // ── Online count: driven by per-card WebSocket callbacks ─────────────
     const [onlineRobotIds, setOnlineRobotIds] = useState<Set<number>>(new Set());
 
-    /**
-     * Called by each RobotCard whenever its WebSocket reports a status change.
-     * We aggregate the individual signals here so StatsCards always shows the
-     * true real-time online count across the visible page.
-     */
     const handleOnlineStatusChange = useCallback(
         (robotId: number, isOnline: boolean) => {
             setOnlineRobotIds((prev) => {
@@ -72,16 +67,18 @@ export default function RobotManagementPage() {
             setNextPage(response.next);
             setPreviousPage(response.previous);
 
-            // ── Fleet-wide stats come from response.results, not the page slice ──
             const results = response.results ?? {};
+            const robotsData: Robot[] = results.data || response.data || [];
             const fleetTotal = results.total_robots ?? response.count ?? 0;
 
-            // Use fleet total for pagination (response.count is per-page count, not total)
             setTotalCount(fleetTotal);
             setTotalRobots(fleetTotal);
-            setActiveCount(results.active_count ?? 0);
 
-            const robotsData: Robot[] = results.data || response.data || [];
+            // ── FIX: derive active count from data array if API doesn't return it ──
+            const derivedActiveCount =
+                results.active_count ?? robotsData.filter((r: Robot) => r.is_active).length;
+            setActiveCount(derivedActiveCount);
+
             setRobots(robotsData);
             setCurrentPage(page);
 
@@ -243,7 +240,7 @@ export default function RobotManagementPage() {
                 </button>
             </div>
 
-            {/* STATS — fleet-wide values from API + live online count from WS callbacks */}
+            {/* STATS */}
             <StatsCards
                 totalRobots={totalRobots}
                 activeCount={activeCount}
