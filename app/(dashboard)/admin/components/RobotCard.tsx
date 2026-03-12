@@ -346,7 +346,7 @@ export function RobotCard({
           </div>
 
           {/* Secondary Actions */}
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-1 gap-3">
             <button
               onClick={(e) => { e.stopPropagation(); onEdit(localRobot); }}
               className="w-full px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
@@ -354,13 +354,13 @@ export function RobotCard({
             >
               Edit
             </button>
-            <button
+            {/* <button
               onClick={handleDeactivate}
               className="w-full px-4 py-2 rounded-lg border border-red-200 text-red-700 text-sm font-medium hover:bg-red-50 transition-colors disabled:opacity-50"
               disabled={isToggling || isDeleting}
             >
               {isDeleting ? "Deactivating..." : "Deactivate"}
-            </button>
+            </button> */}
 
             {/* ── Go to Dashboard — appends ?from=admin so the dashboard shows a Back button ── */}
             <a

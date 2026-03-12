@@ -420,65 +420,6 @@ export default function InspectionDetailPage() {
                     {/* ── TOP: Verification Actions (auto-height, NO scroll) ──
                           Uses `shrink-0` + no `flex-1` so it only takes the
                           space its content actually needs. No overflow-y-auto.   */}
-                    <div className={`${panel} flex flex-col shrink-0`}>
-                        <SectionHeader
-                            icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
-                            iconBg="bg-emerald-50"
-                            title="Verification Actions"
-                        />
-
-                        <div className="p-4 flex flex-col gap-3">
-                            {!isAlreadyVerified ? (
-                                <>
-                                    {/* Verify button */}
-                                    <button
-                                        onClick={() => setShowVerifyPopup(true)}
-                                        disabled={verifyLoading}
-                                        className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 disabled:from-gray-300 disabled:to-gray-300 text-white rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                    >
-                                        {verifyLoading ? (
-                                            <><Loader2 className="animate-spin" size={15} /> Processing...</>
-                                        ) : (
-                                            <><CheckCircle size={15} /> Verify Inspection</>
-                                        )}
-                                    </button>
-
-                                    {/* False detection toggle */}
-                                    <button
-                                        onClick={() => setShowFalseForm(!showFalseForm)}
-                                        disabled={verifyLoading}
-                                        className={`w-full py-2.5 text-white rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow disabled:cursor-not-allowed flex items-center justify-center gap-2 relative
-                                            ${isFalseDetected
-                                                ? "bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600"
-                                                : "bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-600 hover:to-amber-500"
-                                            } disabled:from-gray-300 disabled:to-gray-300`}
-                                    >
-                                        <AlertCircle size={15} />
-                                        {showFalseForm ? "Cancel" : "Mark as False Detection"}
-                                        {isFalseDetected && !showFalseForm && (
-                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white/20 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full border border-white/30">
-                                                <CheckCircle size={10} /> Marked
-                                            </span>
-                                        )}
-                                    </button>
-                                </>
-                            ) : (
-                                <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-100">
-                                    <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center shrink-0">
-                                        <CheckCircle className="w-5 h-5 text-teal-600" />
-                                    </div>
-                                    <div>
-                                        <p className="text-teal-900 font-bold text-sm">
-                                            Inspection Verified
-                                        </p>
-                                        <p className="text-teal-600 text-xs mt-0.5">
-                                            Human verified and processed successfully.
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
 
                     {/* ── BOTTOM: Quality Control + Details (scrollable) ── */}
                     <div className={`${panel} flex flex-col`}>
@@ -546,9 +487,24 @@ export default function InspectionDetailPage() {
                                     </div>
                                 </div>
                             )}
+                            {/* Description */}
+                            {inspection.description && (
+                                <div className="rounded-xl border border-gray-200 overflow-hidden">
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200">
+                                        <ClipboardCheck className="w-3.5 h-3.5 text-gray-500" />
+                                        <span className="text-xs font-bold text-gray-600">
+                                            Description
+                                        </span>
+                                    </div>
+                                    <div className="p-3 bg-white">
+                                        <p className="text-sm text-gray-600 leading-relaxed">
+                                            {inspection.description}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
 
-                            {/* False detection form */}
-                            {showFalseForm && (
+                                                        {showFalseForm && (
                                 <div className="rounded-xl border border-amber-200 bg-amber-50/40 overflow-hidden">
                                     <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200 shrink-0">
                                         <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -631,19 +587,62 @@ export default function InspectionDetailPage() {
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    </div>
 
-                            {/* Description */}
-                            {inspection.description && (
-                                <div className="rounded-xl border border-gray-200 overflow-hidden">
-                                    <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-b border-gray-200">
-                                        <ClipboardCheck className="w-3.5 h-3.5 text-gray-500" />
-                                        <span className="text-xs font-bold text-gray-600">
-                                            Description
-                                        </span>
+                                        <div className={`${panel} flex flex-col shrink-0`}>
+                        <SectionHeader
+                            icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
+                            iconBg="bg-emerald-50"
+                            title="Verification Actions"
+                        />
+
+                        <div className="p-4 flex flex-col gap-3">
+                            {!isAlreadyVerified ? (
+                                <>
+                                    {/* Verify button */}
+                                    <button
+                                        onClick={() => setShowVerifyPopup(true)}
+                                        disabled={verifyLoading}
+                                        className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 disabled:from-gray-300 disabled:to-gray-300 text-white rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    >
+                                        {verifyLoading ? (
+                                            <><Loader2 className="animate-spin" size={15} /> Processing...</>
+                                        ) : (
+                                            <><CheckCircle size={15} /> Verify Inspection</>
+                                        )}
+                                    </button>
+
+                                    {/* False detection toggle */}
+                                    <button
+                                        onClick={() => setShowFalseForm(!showFalseForm)}
+                                        disabled={verifyLoading}
+                                        className={`w-full py-2.5 text-white rounded-xl font-bold text-sm transition-all shadow-sm hover:shadow disabled:cursor-not-allowed flex items-center justify-center gap-2 relative
+                                            ${isFalseDetected
+                                                ? "bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600"
+                                                : "bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-600 hover:to-amber-500"
+                                            } disabled:from-gray-300 disabled:to-gray-300`}
+                                    >
+                                        <AlertCircle size={15} />
+                                        {showFalseForm ? "Cancel" : "Mark as False Detection"}
+                                        {isFalseDetected && !showFalseForm && (
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 bg-white/20 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full border border-white/30">
+                                                <CheckCircle size={10} /> Marked
+                                            </span>
+                                        )}
+                                    </button>
+                                </>
+                            ) : (
+                                <div className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-100">
+                                    <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center shrink-0">
+                                        <CheckCircle className="w-5 h-5 text-teal-600" />
                                     </div>
-                                    <div className="p-3 bg-white">
-                                        <p className="text-sm text-gray-600 leading-relaxed">
-                                            {inspection.description}
+                                    <div>
+                                        <p className="text-teal-900 font-bold text-sm">
+                                            Inspection Verified
+                                        </p>
+                                        <p className="text-teal-600 text-xs mt-0.5">
+                                            Human verified and processed successfully.
                                         </p>
                                     </div>
                                 </div>

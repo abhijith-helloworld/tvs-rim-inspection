@@ -948,19 +948,6 @@ const Dashboard: React.FC = () => {
                             <div className="bg-slate-50/70 p-3 xl:p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">
                                 <div className="flex items-center justify-between mb-1">
                                     <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">
-                                        Total Detected
-                                    </h3>
-                                    <AlertTriangle className="text-rose-500/80 shrink-0" size={16} />
-                                </div>
-                                <div className="text-2xl font-bold text-slate-900">
-                                    {data.defects.totalDetected}
-                                </div>
-                                <div className="text-xs text-slate-500 mt-0.5">Defects found</div>
-                            </div>
-
-                            <div className="bg-slate-50/70 p-3 xl:p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">
-                                <div className="flex items-center justify-between mb-1">
-                                    <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">
                                         Total Scanned
                                     </h3>
                                     <HardDrive className="text-blue-500/80 shrink-0" size={16} />
@@ -974,7 +961,7 @@ const Dashboard: React.FC = () => {
                             <div className="bg-rose-50/50 p-3 xl:p-4 rounded-lg border border-rose-200/30 transition-all duration-150 hover:bg-rose-50/70">
                                 <div className="flex items-center justify-between mb-1">
                                     <h3 className="text-slate-600 text-xs font-medium uppercase tracking-wide">
-                                        Critical Defects
+                                        Defects
                                     </h3>
                                     <AlertTriangle className="text-rose-600/80 shrink-0" size={16} />
                                 </div>
