@@ -474,7 +474,7 @@ export default function InspectionsBySchedule() {
             </div>
 
             {/* ── BACK BUTTON ── */}
-            <div className="flex-shrink-0 px-4 py-2">
+            {/* <div className="flex-shrink-0 px-4 py-2">
                 <Link
                     href="/schedules"
                     className="flex items-center gap-2 text-sm text-gray-500 hover:text-teal-600 transition-colors font-medium"
@@ -482,7 +482,7 @@ export default function InspectionsBySchedule() {
                     <ArrowLeft className="w-4 h-4" />
                     Back to Schedules
                 </Link>
-            </div>
+            </div> */}
 
             {/* ── STAT CARDS ── */}
             <div className="flex-shrink-0 px-4 pb-3">
