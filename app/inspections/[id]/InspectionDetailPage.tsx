@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
     CheckCircle,
     AlertCircle,
@@ -9,6 +9,8 @@ import {
     Loader2,
     ClipboardCheck,
     ArrowLeft,
+    ChevronLeft,
+    ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -93,6 +95,15 @@ export default function InspectionDetailPage() {
     const [isApproved,      setIsApproved]      = useState(false);
     const [showVerifyPopup, setShowVerifyPopup] = useState(false);
 
+    /* ── swipe / neighbour IDs ── */
+    const [allIds,     setAllIds]     = useState<number[]>([]);
+    const [idsLoading, setIdsLoading] = useState(false);
+    const [swipeAnim,  setSwipeAnim]  = useState<"left" | "right" | null>(null);
+
+    const touchStartX     = useRef<number>(0);
+    const touchStartY     = useRef<number>(0);
+    const SWIPE_THRESHOLD = 50; // px
+
     /* ── robot / header state ── */
     const [robotData,   setRobotData]   = useState<RobotData | null>(null);
     const [roboId,      setRoboId]      = useState<string>("");
@@ -123,8 +134,7 @@ export default function InspectionDetailPage() {
                     setRobotData(robot);
                     if (robot.robo_id) setRoboId(robot.robo_id as string);
                 }
-            } catch (err) {
-            }
+            } catch (err) {}
         };
         fetchRobotData();
     }, [robotId]);
@@ -177,8 +187,7 @@ export default function InspectionDetailPage() {
                                 Arm_moving:       payload.data.Arm_moving       ?? prev.Arm_moving,
                             }));
                         }
-                    } catch (err) {
-                    }
+                    } catch (err) {}
                 };
 
                 ws.onclose = () => {
@@ -199,6 +208,92 @@ export default function InspectionDetailPage() {
             wsRef.current = null;
         };
     }, [roboId]);
+
+    /* ── Fetch ALL inspection IDs for this schedule (for swipe nav) ── */
+    useEffect(() => {
+        if (!scheduleId) return;
+
+        const fetchAllIds = async () => {
+            setIdsLoading(true);
+            try {
+                let page = 1;
+                const ids: number[] = [];
+
+                while (true) {
+                    const res = await fetchWithAuth(
+                        `${API_BASE_URL}/schedule/${scheduleId}/inspections/?page=${page}`
+                    );
+                    if (!res.ok) break;
+                    const data = await res.json();
+                    const results: any[] = data?.results?.inspections ?? [];
+                    results.forEach((item: any) => ids.push(item.id));
+                    if (!data?.next) break;
+                    page++;
+                }
+
+                setAllIds(ids);
+            } catch (err) {
+                // silently fail — swipe just won't work
+            } finally {
+                setIdsLoading(false);
+            }
+        };
+
+        fetchAllIds();
+    }, [scheduleId]);
+
+    /* ── Derived swipe neighbours ── */
+    const currentIndex = allIds.indexOf(Number(id));
+    const prevId       = currentIndex > 0                 ? allIds[currentIndex - 1] : null;
+    const nextId       = currentIndex < allIds.length - 1 ? allIds[currentIndex + 1] : null;
+
+    /* ── Navigate to neighbour with slide animation ── */
+    const navigateTo = useCallback((targetId: number, direction: "left" | "right") => {
+        setSwipeAnim(direction);
+        setTimeout(() => {
+            setSwipeAnim(null);
+            router.push(`/inspections/${targetId}?robot_id=${robotId}&schedule_id=${scheduleId}`);
+        }, 220);
+    }, [router, robotId, scheduleId]);
+
+    const goNext = useCallback(() => {
+        if (nextId) navigateTo(nextId, "left");
+        else toast.info("This is the last inspection");
+    }, [nextId, navigateTo]);
+
+    const goPrev = useCallback(() => {
+        if (prevId) navigateTo(prevId, "right");
+        else toast.info("This is the first inspection");
+    }, [prevId, navigateTo]);
+
+    /* ── Touch handlers ── */
+    const handleTouchStart = (e: React.TouchEvent) => {
+        touchStartX.current = e.touches[0].clientX;
+        touchStartY.current = e.touches[0].clientY;
+    };
+
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        const dx = e.changedTouches[0].clientX - touchStartX.current;
+        const dy = e.changedTouches[0].clientY - touchStartY.current;
+        // Ignore mostly-vertical scrolls
+        if (Math.abs(dy) > Math.abs(dx)) return;
+        if (Math.abs(dx) < SWIPE_THRESHOLD) return;
+        if (dx < 0) goNext(); // swipe left  → next
+        else         goPrev(); // swipe right → prev
+    };
+
+    /* ── Keyboard arrow navigation ── */
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            // Don't fire when user is typing in an input/textarea
+            const tag = (e.target as HTMLElement).tagName;
+            if (tag === "INPUT" || tag === "TEXTAREA") return;
+            if (e.key === "ArrowRight") goNext();
+            if (e.key === "ArrowLeft")  goPrev();
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [goNext, goPrev]);
 
     /* ── Fetch inspection ── */
     const fetchInspection = async () => {
@@ -223,7 +318,13 @@ export default function InspectionDetailPage() {
     };
 
     useEffect(() => {
-        if (id) fetchInspection();
+        if (id) {
+            setLoading(true);
+            setShowFalseForm(false);
+            setUserDescription("");
+            setCorrectLabel("");
+            fetchInspection();
+        }
     }, [id]);
 
     /* ── Verify ── */
@@ -231,9 +332,6 @@ export default function InspectionDetailPage() {
         try {
             setVerifyLoading(true);
             const payload = {
-                // Defect → never approved
-                // Normal verify, no defect → auto-approve (true)
-                // False detection form → use the isApproved toggle (still blocked if defect)
                 is_approved: inspection?.is_defect
                     ? false
                     : falseDetectedValue
@@ -303,7 +401,6 @@ export default function InspectionDetailPage() {
     const inspectedDate     = new Date(inspection.inspected_at);
     const isAlreadyVerified = inspection.is_human_verified;
     const isFalseDetected   = inspection.false_detected;
-    // Defective inspections can never be approved
     const canApprove        = !inspection.is_defect;
 
     /* Shared styles */
@@ -317,12 +414,22 @@ export default function InspectionDetailPage() {
         </div>
     );
 
+    /* ── Swipe animation class ── */
+    const swipeClass = swipeAnim === "left"
+        ? "-translate-x-10 opacity-0"
+        : swipeAnim === "right"
+            ? "translate-x-10 opacity-0"
+            : "translate-x-0 opacity-100";
+
     /* ================================================================
        RENDER
        ================================================================ */
     return (
-        <div className="min-h-screen flex flex-col bg-gray-50">
-
+        <div
+            className="min-h-screen flex flex-col bg-gray-50"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+        >
             {/* ── Dashboard Header ─────────────────────────────────────── */}
             <RobotDashboardHeader
                 title="Robotic Inspection Dashboard"
@@ -334,13 +441,12 @@ export default function InspectionDetailPage() {
                 time={time}
             />
 
-            {/* ── Sub-header: Back button + verified badge ─────────────── */}
+            {/* ── Sub-header: Back + Swipe Nav + Verified badge ────────── */}
             <div className="px-5 py-2.5 flex items-center gap-3 shrink-0 border-b border-gray-100 bg-white/60 backdrop-blur-sm">
+                {/* Back button */}
                 <button
                     onClick={() =>
-                        router.push(
-                            `/inspections?schedule_id=${scheduleId}&robot_id=${robotId}`,
-                        )
+                        router.push(`/inspections?schedule_id=${scheduleId}&robot_id=${robotId}`)
                     }
                     className="group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-teal-700 hover:border-teal-300 hover:bg-teal-50 transition-all duration-150 text-sm font-medium"
                 >
@@ -350,16 +456,66 @@ export default function InspectionDetailPage() {
                     </span>
                 </button>
 
+                {/* ── Prev / counter / Next ── */}
+                {allIds.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={goPrev}
+                            disabled={!prevId || idsLoading}
+                            title="Previous (← key)"
+                            className={`p-1.5 rounded-lg border transition-all ${
+                                !prevId || idsLoading
+                                    ? "bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed"
+                                    : "bg-white border-gray-200 hover:bg-teal-50 hover:border-teal-300 text-gray-600 hover:text-teal-700"
+                            }`}
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </button>
+
+                        <span className="text-xs font-semibold text-gray-500 px-1 tabular-nums min-w-[56px] text-center">
+                            {idsLoading
+                                ? "…"
+                                : currentIndex >= 0
+                                    ? `${currentIndex + 1} / ${allIds.length}`
+                                    : `— / ${allIds.length}`}
+                        </span>
+
+                        <button
+                            onClick={goNext}
+                            disabled={!nextId || idsLoading}
+                            title="Next (→ key)"
+                            className={`p-1.5 rounded-lg border transition-all ${
+                                !nextId || idsLoading
+                                    ? "bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed"
+                                    : "bg-white border-gray-200 hover:bg-teal-50 hover:border-teal-300 text-gray-600 hover:text-teal-700"
+                            }`}
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
+
                 {isAlreadyVerified && (
-                    <span className="inline-flex items-center gap-1.5 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-semibold px-3 py-1 rounded-full">
+                    <span className="inline-flex items-center gap-1.5 bg-teal-50 border border-teal-200 text-teal-700 text-xs font-semibold px-3 py-1 rounded-full ml-auto">
                         <CheckCircle className="w-3.5 h-3.5" />
                         Verified Inspection
                     </span>
                 )}
             </div>
 
-            {/* ── Main layout ───────────────────────────────────── */}
-            <div className="flex flex-col md:flex-row gap-3 p-3 md:p-4">
+            {/* ── Mobile swipe hint ── */}
+            {allIds.length > 1 && (
+                <div className="md:hidden px-4 py-1.5 bg-teal-50 border-b border-teal-100 flex items-center justify-center gap-2">
+                    <ChevronLeft className="w-3 h-3 text-teal-400" />
+                    <span className="text-[11px] text-teal-600 font-medium">
+                        Swipe left / right to navigate inspections
+                    </span>
+                    <ChevronRight className="w-3 h-3 text-teal-400" />
+                </div>
+            )}
+
+            {/* ── Main layout (animated on swipe) ─────────────────────── */}
+            <div className={`flex flex-col md:flex-row gap-3 p-3 md:p-4 transition-all duration-200 ease-in-out ${swipeClass}`}>
 
                 {/* ══ LEFT: Inspection Image ══════════════════════════════ */}
                 <div className={`${panel} flex flex-col md:w-[45%] xl:w-1/2 shrink-0`}>
@@ -369,13 +525,35 @@ export default function InspectionDetailPage() {
                         title="Inspection Image"
                     />
 
-                    {/* Image area */}
-                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center min-h-[320px] md:min-h-[400px]">
+                    {/* Image area with hover arrow buttons */}
+                    <div className="bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center min-h-[320px] md:min-h-[400px] relative group/img">
                         <img
                             src={inspection.image}
                             alt="Inspection image"
                             className="w-full h-full object-contain p-4"
                         />
+
+                        {/* Left arrow (hover on desktop) */}
+                        {prevId && (
+                            <button
+                                onClick={goPrev}
+                                className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/40 hover:bg-black/60 rounded-full p-2"
+                                aria-label="Previous inspection"
+                            >
+                                <ChevronLeft className="w-5 h-5 text-white" />
+                            </button>
+                        )}
+
+                        {/* Right arrow (hover on desktop) */}
+                        {nextId && (
+                            <button
+                                onClick={goNext}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/img:opacity-100 transition-opacity bg-black/40 hover:bg-black/60 rounded-full p-2"
+                                aria-label="Next inspection"
+                            >
+                                <ChevronRight className="w-5 h-5 text-white" />
+                            </button>
+                        )}
                     </div>
 
                     {/* Footer meta strip */}
@@ -602,7 +780,6 @@ export default function InspectionDetailPage() {
                         <div className="p-4 flex flex-col gap-3">
                             {!isAlreadyVerified ? (
                                 <>
-                                    {/* Verify button */}
                                     <button
                                         onClick={() => setShowVerifyPopup(true)}
                                         disabled={verifyLoading}
@@ -615,7 +792,6 @@ export default function InspectionDetailPage() {
                                         )}
                                     </button>
 
-                                    {/* False detection toggle */}
                                     <button
                                         onClick={() => setShowFalseForm(!showFalseForm)}
                                         disabled={verifyLoading}
@@ -640,12 +816,8 @@ export default function InspectionDetailPage() {
                                         <CheckCircle className="w-5 h-5 text-teal-600" />
                                     </div>
                                     <div>
-                                        <p className="text-teal-900 font-bold text-sm">
-                                            Inspection Verified
-                                        </p>
-                                        <p className="text-teal-600 text-xs mt-0.5">
-                                            Human verified and processed successfully.
-                                        </p>
+                                        <p className="text-teal-900 font-bold text-sm">Inspection Verified</p>
+                                        <p className="text-teal-600 text-xs mt-0.5">Human verified and processed successfully.</p>
                                     </div>
                                 </div>
                             )}
@@ -663,23 +835,20 @@ export default function InspectionDetailPage() {
                             <div className="p-3 bg-teal-50 rounded-lg">
                                 <CheckCircle className="w-6 h-6 text-teal-600" />
                             </div>
-                            <h3 className="text-2xl font-bold text-gray-900">
-                                Confirm Verification
-                            </h3>
+                            <h3 className="text-2xl font-bold text-gray-900">Confirm Verification</h3>
                         </div>
 
                         <p className="text-gray-600 leading-relaxed">
-                            Are you sure you want to verify this inspection? This action
-                            confirms that the AI detection is correct and will mark the
-                            inspection as human verified.
+                            Are you sure you want to verify this inspection? This action confirms that the AI
+                            detection is correct and will mark the inspection as human verified.
                         </p>
 
-                        {/* Warning inside modal if defect detected */}
                         {inspection.is_defect && (
                             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 border border-red-200">
                                 <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                                 <p className="text-xs text-red-700 font-medium leading-relaxed">
-                                    This inspection has a defect. It will be verified but <span className="font-bold">not approved</span>.
+                                    This inspection has a defect. It will be verified but{" "}
+                                    <span className="font-bold">not approved</span>.
                                 </p>
                             </div>
                         )}

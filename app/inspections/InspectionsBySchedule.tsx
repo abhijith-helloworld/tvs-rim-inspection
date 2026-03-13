@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
     Calendar,
@@ -332,6 +332,10 @@ export default function InspectionsBySchedule() {
         };
     }, [roboId]);
 
+    const handleBack = useCallback(() => {
+        router.back();
+    }, [router]);
+
     /* ── WebSocket for inspection_created events ── */
     useEffect(() => {
         if (!scheduleId) return;
@@ -490,6 +494,21 @@ export default function InspectionsBySchedule() {
                     />
                 </div>
             </div>
+
+                <button
+                    onClick={handleBack}
+                    className="inline-flex items-center gap-2 text-gray-600 text-sm font-medium group cursor-pointer"
+                >
+                    <ArrowLeft
+                        className="w-4 h-4 text-gray-400 group-hover:text-gray-600 group-hover:-translate-x-0.5 transition-all duration-150"
+                    />
+                    <span>
+                        Back to{" "}
+                        <span className="font-semibold text-gray-800">
+                            {robotData?.name ?? "Robot"}
+                        </span>
+                    </span>
+                </button>
 
             {/* ── ERROR BANNER ── */}
             {fetchError && (
