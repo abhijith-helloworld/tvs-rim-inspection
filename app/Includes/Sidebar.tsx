@@ -42,7 +42,6 @@ export default function Sidebar() {
             document.cookie = "role=; path=/; max-age=0; SameSite=Lax";
             window.location.href = "/login";
         } catch (error) {
-            console.error("Logout error:", error);
             window.location.href = "/login";
         }
     };

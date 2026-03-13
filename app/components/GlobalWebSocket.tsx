@@ -33,13 +33,11 @@ export default function GlobalWebSocket() {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log("GlobalWebSocket event:", data.event, data); // ← debug log
 
           if (data.event === "robot_unassigned") {
             showModalRef.current(data.data?.message ?? "Robot Unassigned");
           }
         } catch (err) {
-          console.error("GlobalWebSocket parse error:", err);
         }
       };
 

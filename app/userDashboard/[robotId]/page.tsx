@@ -512,7 +512,6 @@ const Dashboard: React.FC = () => {
                 if (robot.robo_id) setRoboId(robot.robo_id);
                 setError(null);
             } catch (err) {
-                console.error(err);
                 setError("Failed to load robot data");
                 setRobotData(null);
             } finally {
@@ -525,7 +524,6 @@ const Dashboard: React.FC = () => {
         if (!robotId) return;
 
         const url = `${API_BASE_URL}/robots/${robotId}/`;
-        console.log(`[min-battery][page] Fetching: ${url}`);
 
         try {
             const res = await fetchWithAuth(url, {
@@ -535,12 +533,10 @@ const Dashboard: React.FC = () => {
 
             if (!res.ok) {
                 const text = await res.text();
-                console.error(`[min-battery][page] API ${res.status}:`, text);
                 return;
             }
 
             const result = await res.json();
-            console.log("[min-battery][page] API response:", result);
 
             let minCharge: number | null = null;
 
@@ -555,15 +551,12 @@ const Dashboard: React.FC = () => {
             }
 
             if (minCharge !== null) {
-                console.log(`[min-battery][page] Patching robotData → minimum_battery_charge: ${minCharge}%`);
                 setRobotData((prev) =>
                     prev ? { ...prev, minimum_battery_charge: minCharge! } : prev,
                 );
             } else {
-                console.warn("[min-battery][page] Could not extract minimum_battery_charge from:", result);
             }
         } catch (err) {
-            console.error("[min-battery][page] fetch failed:", err);
         }
     }, [robotId]);
 
@@ -620,7 +613,6 @@ const Dashboard: React.FC = () => {
                     });
                 }
             } catch (err) {
-                console.error(err);
             }
         })();
     }, [robotId, currentFilter]);
@@ -637,7 +629,6 @@ const Dashboard: React.FC = () => {
             setLocations(Object.values(ld?.locations ?? {}).filter(Boolean) as string[]);
             setMapName(ld?.map_name ?? "");
         } catch (err) {
-            console.error(err);
         } finally {
             setLocationLoading(false);
         }
@@ -657,7 +648,6 @@ const Dashboard: React.FC = () => {
             const opMode = result.operation_mode || result;
             setOperationMode(opMode);
         } catch (err) {
-            console.error("❌ Failed to fetch operation mode:", err);
         }
     }, [robotId]);
 
@@ -672,7 +662,6 @@ const Dashboard: React.FC = () => {
             const result = await res.json();
             if (result.data) applyNavData(result.data);
         } catch (err) {
-            console.error("❌ Failed to fetch navigation state:", err);
         }
     }, [robotId, applyNavData]);
 
@@ -691,7 +680,6 @@ const Dashboard: React.FC = () => {
     const handleLocationClick = useCallback(
         (locationName: string) => {
             if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-                console.warn("⚠️ WS not connected");
                 return;
             }
             wsRef.current.send(
@@ -741,7 +729,6 @@ const Dashboard: React.FC = () => {
                 }
                 await refetchNavigation();
             } catch (err) {
-                console.error(err);
                 setNavPatchError("Failed to update navigation");
                 setNavigationMode(prevMode);
                 setNavigationStyle(prevStyle);
@@ -904,11 +891,9 @@ const Dashboard: React.FC = () => {
                         }
 
                         if (payload.event === "min_battery_updated") {
-                            console.log("[min-battery][page] WS event:", payload.data);
 
                             const inlineValue = payload.data?.minimum_battery_charge;
                             if (typeof inlineValue === "number") {
-                                console.log(`[min-battery][page] Inline → ${inlineValue}%`);
                                 setRobotData((prev) =>
                                     prev
                                         ? { ...prev, minimum_battery_charge: inlineValue }
@@ -919,11 +904,9 @@ const Dashboard: React.FC = () => {
                             fetchMinimumBatteryCharge();
                         }
                     } catch (err) {
-                        console.error("❌ WS parse error:", err);
                     }
                 };
 
-                ws.onerror = (err) => console.error("❌ WS error:", err);
                 ws.onclose = () => {
                     setWsConnected(false);
                     wsRef.current = null;
@@ -931,7 +914,6 @@ const Dashboard: React.FC = () => {
                         reconnectTimeout = setTimeout(connect, 3000);
                 };
             } catch (err) {
-                console.error("❌ WS init failed:", err);
                 if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
             }
         };

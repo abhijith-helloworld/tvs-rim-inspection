@@ -57,7 +57,6 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
     useEffect(() => {
         const id = robotIdProp || robotIdFromUrl || robotIdFromParams;
         if (!id || id === "undefined" || id === "null") {
-            console.error("CreateSchedule - Invalid robotId, redirecting...");
             router.push("/dashboard?robot_id=1");
             return;
         }
@@ -85,7 +84,6 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                 const data = await response.json();
                 setRobotInfo(data.data || data);
             } catch (error) {
-                console.error("Error fetching robot info:", error);
                 toast.error("Failed to load robot information");
             } finally {
                 setIsLoadingRobot(false);
@@ -114,7 +112,6 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                     setFilteredLocations(locationsList);
                 }
             } catch (error) {
-                console.error("Error fetching locations:", error);
             } finally {
                 setIsLoadingLocations(false);
             }
@@ -251,7 +248,6 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
             setErrors({});
             onSuccess?.();
         } catch (error) {
-            console.error("Error creating schedule:", error);
             toast.error(
                 <div className="flex items-center space-x-3">
                     <div className="p-2 rounded-full bg-gradient-to-r from-rose-500 to-red-400">
@@ -323,7 +319,6 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
             setErrors({});
             onSuccess?.();
         } catch (error) {
-            console.error("Error creating immediate schedule:", error);
             toast.error(
                 <div className="flex items-center space-x-3">
                     <div className="p-2 rounded-full bg-gradient-to-r from-rose-500 to-red-400">

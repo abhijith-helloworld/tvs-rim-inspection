@@ -154,7 +154,6 @@ export default function LoginPage() {
                 }
             }
         } catch (err) {
-            console.error("Forgot password error:", err);
             setError("Network error. Please check your connection and try again.");
         }
         setLoading(false);
@@ -195,7 +194,6 @@ export default function LoginPage() {
                 setShowSuccessModal(true);
             }
         } catch (err) {
-            console.error("Reset password error:", err);
             setError("Network error. Please check your connection and try again.");
         }
         setLoading(false);

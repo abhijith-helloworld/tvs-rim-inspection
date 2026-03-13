@@ -148,10 +148,10 @@ const PaginationControls = ({
                     </button>
 
                     <button
-                        disabled={!hasNext}
+                        disabled={currentPage === totalPages}
                         onClick={() => onPageChange(totalPages)}
                         className={`px-3 h-8 rounded-lg border text-xs font-semibold transition-all ${
-                            !hasNext
+                            currentPage === totalPages
                                 ? "bg-gray-100 border-gray-200/50 text-gray-400 cursor-not-allowed"
                                 : "bg-white border-gray-200/50 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 text-gray-700"
                         }`}
@@ -224,9 +224,9 @@ export default function InspectionsBySchedule() {
     const wsRef = useRef<WebSocket | null>(null);
     const inspectionWsRef = useRef<WebSocket | null>(null);
 
-    const pageSize = 5;
-    // ✅ FIXED: Calculate totalPages exactly from API signals
-    const totalPages = hasNext ? page + 1 : page;
+    const [pageSize, setPageSize] = useState(1);
+    // Derive totalPages dynamically from total count + actual page size returned by API
+    const totalPages = count > 0 && pageSize > 0 ? Math.ceil(count / pageSize) : 1;
 
     const WS_URL = process.env.NEXT_PUBLIC_WS_URL;
 
@@ -251,7 +251,6 @@ export default function InspectionsBySchedule() {
                     if (robot.robo_id) setRoboId(robot.robo_id as string);
                 }
             } catch (err) {
-                console.error("Failed to fetch robot data:", err);
             }
         };
 
@@ -312,12 +311,8 @@ export default function InspectionsBySchedule() {
                             }));
                         }
                     } catch (err) {
-                        console.error("❌ WS parse error:", err);
                     }
                 };
-
-                ws.onerror = (err) => console.error("❌ WS error:", err);
-
                 ws.onclose = () => {
                     setWsConnected(false);
                     wsRef.current = null;
@@ -351,7 +346,6 @@ export default function InspectionsBySchedule() {
                 inspectionWsRef.current = ws;
 
                 ws.onopen = () => {
-                    console.log("✅ Inspection WS connected for schedule:", scheduleId);
                 };
 
                 ws.onmessage = (event) => {
@@ -359,22 +353,16 @@ export default function InspectionsBySchedule() {
                         const payload = JSON.parse(event.data as string);
 
                         if (payload.event === "inspection_created") {
-                            console.log("🔔 New inspection created — refreshing list");
                             fetchInspections(page);
                         }
                     } catch (err) {
-                        console.error("❌ Inspection WS parse error:", err);
                     }
                 };
-
-                ws.onerror = (err) => console.error("❌ Inspection WS error:", err);
-
                 ws.onclose = () => {
                     inspectionWsRef.current = null;
                     if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
                 };
             } catch (err) {
-                console.error("❌ Inspection WS init error:", err);
                 if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
             }
         };
@@ -403,25 +391,18 @@ export default function InspectionsBySchedule() {
                 `${API_BASE_URL}/schedule/${scheduleId}/inspections/?page=${pageNo}`,
             );
             const responseData = await res.json();
-            
-            // 🔍 DEBUG: Log API response structure (remove after verifying)
-            console.log('API Pagination Response:', {
-                count: responseData?.count,
-                next: responseData?.next,
-                previous: responseData?.previous,
-                results: responseData?.results?.inspections?.length,
-                pageNo
-            });
 
-            setInspections(responseData?.results?.inspections ?? []);
+            const results = responseData?.results?.inspections ?? [];
+            setInspections(results);
             setCount(responseData?.count ?? 0);
             setHasNext(!!responseData?.next);
-            setHasPrev(pageNo > 1 || !!responseData?.previous);  // ✅ Improved hasPrev logic
+            setHasPrev(pageNo > 1 || !!responseData?.previous);
             setDefected(responseData?.total_defected ?? 0);
             setPassed(responseData?.total_non_defected ?? 0);
             setVerifiedCount(responseData?.total_human_verified ?? 0);
+            // Only set pageSize when next exists (guarantees this is a full page, not a partial last page)
+            if (responseData?.next && results.length > 0) setPageSize(results.length);
         } catch (err) {
-            console.error("Inspection fetch failed", err);
             setFetchError("Failed to load inspections.");
             setInspections([]);
         } finally {
@@ -429,7 +410,6 @@ export default function InspectionsBySchedule() {
         }
     };
 
-    // ✅ FIXED: Safe page change handler
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= totalPages) {
             setPage(newPage);
@@ -472,17 +452,6 @@ export default function InspectionsBySchedule() {
                     time={time}
                 />
             </div>
-
-            {/* ── BACK BUTTON ── */}
-            {/* <div className="flex-shrink-0 px-4 py-2">
-                <Link
-                    href="/schedules"
-                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-teal-600 transition-colors font-medium"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    Back to Schedules
-                </Link>
-            </div> */}
 
             {/* ── STAT CARDS ── */}
             <div className="flex-shrink-0 px-4 pb-3">
@@ -630,7 +599,7 @@ export default function InspectionsBySchedule() {
                             )}
                         </div>
 
-                        {/* ✅ FIXED Pagination — now shows exactly API-available pages */}
+                        {/* Pagination */}
                         {totalPages > 1 && !loading && (
                             <PaginationControls
                                 currentPage={page}

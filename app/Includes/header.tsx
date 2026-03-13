@@ -348,12 +348,10 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                         setOperationMode(mode);
                         onOperationModeUpdated?.(mode);
                     } else {
-                        console.warn("[operation-mode] Could not extract mode:", result);
                     }
                     setIsLoadingMode(false);
                 })
                 .catch((err) => {
-                    console.error("[operation-mode] fetch failed:", err);
                     setIsLoadingMode(false);
                 });
         },
@@ -373,7 +371,6 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
     ------------------------------------------------------------------ */
     const fetchMinimumBatteryCharge = useCallback(() => {
         if (!robotData?.id) {
-            console.warn("[min-battery] Skipped — robotData.id missing");
             return;
         }
 
@@ -415,7 +412,6 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                 if (minCharge !== null) {
                     setLiveMinimumCharge(minCharge);
                 } else {
-                    console.warn("[min-battery] Could not extract minimum_battery_charge from:", result);
                 }
             })
             .catch((err) => console.error("[min-battery] fetch failed:", err));
@@ -463,7 +459,6 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
             if (message.event === "operation_mode_updated") {
                 const robotId = message.data?.robot_id ?? robotData?.id;
                 if (!robotId) {
-                    console.warn("[operation-mode] No robot_id available");
                     return;
                 }
                 fetchOperationMode(robotId);

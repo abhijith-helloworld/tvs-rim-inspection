@@ -131,7 +131,6 @@ export default function AddUserModal({ isOpen, onClose, onUserAdded }: AddUserMo
                 setError(errorMessages.length > 0 ? errorMessages.join(" • ") : "Failed to create user");
             }
         } catch (err) {
-            console.error("Registration error:", err);
             setError(err instanceof Error ? err.message : "Failed to create user");
         } finally {
             setLoading(false);

@@ -77,7 +77,6 @@ export default function UsersTable({
                 ),
             );
         } catch (err) {
-            console.error("Verify update error:", err);
         } finally {
             setUpdatingId(null);
         }
@@ -94,7 +93,6 @@ export default function UsersTable({
                 );
             }
         } catch (err) {
-            console.error("Fetch robots error:", err);
         } finally {
             setLoadingRobots(false);
         }
@@ -133,7 +131,6 @@ export default function UsersTable({
             // Delegate refetch to parent — avoids stale totalPages issue
             onPageChange(currentPage);
         } catch (err) {
-            console.error("Assign robots error:", err);
         } finally {
             setUpdatingId(null);
         }
@@ -160,7 +157,6 @@ export default function UsersTable({
                 ),
             );
         } catch (err) {
-            console.error("Remove robot error:", err);
         } finally {
             setUpdatingId(null);
         }

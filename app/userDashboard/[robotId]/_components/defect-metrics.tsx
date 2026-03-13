@@ -59,7 +59,6 @@ const DefectMetrics = () => {
           setStats(json.data);
         }
       } catch (err) {
-        console.error("Stats fetch error", err);
       } finally {
         setLoading(false);
       }

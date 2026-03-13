@@ -107,7 +107,6 @@ export function ScheduleCard({ schedule, onClick, onUpdate }: ScheduleCardProps)
                 throw new Error(result.message || "Failed to cancel schedule");
             }
         } catch (error: any) {
-            console.error("❌ Error canceling schedule:", error);
             alert(error.message || "Failed to cancel schedule");
         } finally {
             setIsCanceling(false);
@@ -276,7 +275,6 @@ function EditScheduleModal({ schedule, onClose, onUpdate }: EditScheduleModalPro
                 throw new Error(result.message || "Failed to update schedule");
             }
         } catch (error: any) {
-            console.error("❌ Error updating schedule:", error);
             setError(error.message || "Failed to update schedule");
         } finally {
             setIsSaving(false);

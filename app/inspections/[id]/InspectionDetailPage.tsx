@@ -124,7 +124,6 @@ export default function InspectionDetailPage() {
                     if (robot.robo_id) setRoboId(robot.robo_id as string);
                 }
             } catch (err) {
-                console.error("Failed to fetch robot data:", err);
             }
         };
         fetchRobotData();
@@ -179,18 +178,15 @@ export default function InspectionDetailPage() {
                             }));
                         }
                     } catch (err) {
-                        console.error("❌ WS parse error:", err);
                     }
                 };
 
-                ws.onerror = (err) => console.error("❌ WS error:", err);
                 ws.onclose = () => {
                     setWsConnected(false);
                     wsRef.current = null;
                     if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
                 };
             } catch (err) {
-                console.error("❌ WS init error:", err);
                 if (!isManualClose) reconnectTimeout = setTimeout(connect, 3000);
             }
         };
@@ -214,7 +210,10 @@ export default function InspectionDetailPage() {
             }
             const data = await res.json();
             setInspection(data.inspection);
-            setIsApproved(data.inspection?.is_approved ?? false);
+
+            // ✅ FIX: Never approve a defective inspection
+            const isDefect = data.inspection?.is_defect ?? false;
+            setIsApproved(isDefect ? false : (data.inspection?.is_approved ?? false));
         } catch (error: any) {
             toast.error(error.message || "Session expired. Please login again.");
             router.push("/login");
@@ -232,7 +231,8 @@ export default function InspectionDetailPage() {
         try {
             setVerifyLoading(true);
             const payload = {
-                is_approved:      isApproved,
+                // ✅ FIX: Force is_approved to false when defect is detected
+                is_approved:      inspection?.is_defect ? false : isApproved,
                 false_detected:   falseDetectedValue,
                 user_description: falseDetectedValue ? userDescription : "",
                 correct_label:    falseDetectedValue ? correctLabel    : "",
@@ -297,6 +297,8 @@ export default function InspectionDetailPage() {
     const inspectedDate     = new Date(inspection.inspected_at);
     const isAlreadyVerified = inspection.is_human_verified;
     const isFalseDetected   = inspection.false_detected;
+    // ✅ FIX: Defective inspections can never be approved
+    const canApprove        = !inspection.is_defect;
 
     /* Shared styles */
     const panel = "bg-white rounded-2xl border border-gray-200/50 shadow-sm";
@@ -337,11 +339,8 @@ export default function InspectionDetailPage() {
                     className="group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:text-teal-700 hover:border-teal-300 hover:bg-teal-50 transition-all duration-150 text-sm font-medium"
                 >
                     <ArrowLeft className="w-4 h-4 text-gray-400 group-hover:text-teal-600 group-hover:-translate-x-0.5 transition-all duration-150 shrink-0" />
-                    <span>
-                        Back to{" "}
-                        <span className="font-semibold text-gray-800 group-hover:text-teal-800">
-                            {robotData?.name ?? "Robot"}
-                        </span>
+                    <span className="font-semibold text-gray-800 group-hover:text-teal-800">
+                        Back to Inspections
                     </span>
                 </button>
 
@@ -353,16 +352,7 @@ export default function InspectionDetailPage() {
                 )}
             </div>
 
-            {/* ── Main 3-panel layout ───────────────────────────────────
-                  Breakpoints:
-                    < 768px   → full vertical stack
-                    768–1279  → left image 45% | right stack 55%
-                    ≥ 1280px  → left image 50% | right stack 50%
-
-                  The right stack uses a fixed pixel split so "Verification
-                  Actions" is always auto-height (no scroll) and "Quality
-                  Control" takes the remaining space.
-            ──────────────────────────────────────────────────────────── */}
+            {/* ── Main layout ───────────────────────────────────── */}
             <div className="flex flex-col md:flex-row gap-3 p-3 md:p-4">
 
                 {/* ══ LEFT: Inspection Image ══════════════════════════════ */}
@@ -373,7 +363,7 @@ export default function InspectionDetailPage() {
                         title="Inspection Image"
                     />
 
-                    {/* Image area — fills all remaining space */}
+                    {/* Image area */}
                     <div className="bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center min-h-[320px] md:min-h-[400px]">
                         <img
                             src={inspection.image}
@@ -417,11 +407,7 @@ export default function InspectionDetailPage() {
                 {/* ══ RIGHT: two stacked panels ══════════════════════════ */}
                 <div className="flex-1 flex flex-col gap-3 min-w-0">
 
-                    {/* ── TOP: Verification Actions (auto-height, NO scroll) ──
-                          Uses `shrink-0` + no `flex-1` so it only takes the
-                          space its content actually needs. No overflow-y-auto.   */}
-
-                    {/* ── BOTTOM: Quality Control + Details (scrollable) ── */}
+                    {/* ── Quality Control + Details ── */}
                     <div className={`${panel} flex flex-col`}>
                         <SectionHeader
                             icon={<TrendingUp className="w-3.5 h-3.5 text-blue-600" />}
@@ -447,13 +433,13 @@ export default function InspectionDetailPage() {
                                     value={inspection.is_human_verified ? "Yes" : "No"}
                                     status={inspection.is_human_verified ? "success" : "neutral"}
                                 />
+                                {/* ✅ FIX: Approved badge blocked when defect detected */}
                                 <DetailBadge
                                     label="Approved"
-                                    value={inspection.is_approved ? "Yes" : "No"}
-                                    status={inspection.is_approved ? "success" : "neutral"}
+                                    value={inspection.is_defect ? "No" : (inspection.is_approved ? "Yes" : "No")}
+                                    status={inspection.is_defect ? "neutral" : (inspection.is_approved ? "success" : "neutral")}
                                 />
                             </div>
-
                             {/* False Detection Details */}
                             {inspection.false_detected && (
                                 <div className="rounded-xl border border-amber-200 overflow-hidden">
@@ -487,6 +473,7 @@ export default function InspectionDetailPage() {
                                     </div>
                                 </div>
                             )}
+
                             {/* Description */}
                             {inspection.description && (
                                 <div className="rounded-xl border border-gray-200 overflow-hidden">
@@ -504,7 +491,8 @@ export default function InspectionDetailPage() {
                                 </div>
                             )}
 
-                                                        {showFalseForm && (
+                            {/* False Detection Form */}
+                            {showFalseForm && (
                                 <div className="rounded-xl border border-amber-200 bg-amber-50/40 overflow-hidden">
                                     <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-b border-amber-200 shrink-0">
                                         <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -536,37 +524,43 @@ export default function InspectionDetailPage() {
                                                 className="w-full border border-amber-300 bg-white px-3 py-2 rounded-lg text-sm h-20 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400 transition-all"
                                             />
                                         </div>
-                                        {/* Approved toggle */}
+
+                                        {/* ✅ FIX: Approved toggle — disabled when defect detected */}
                                         <div
-                                            onClick={() => setIsApproved((prev) => !prev)}
-                                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer select-none transition-all
-                                                ${isApproved
-                                                    ? "bg-emerald-50 border-emerald-300"
-                                                    : "bg-white border-gray-200 hover:border-emerald-200"
+                                            onClick={() => canApprove && setIsApproved((prev) => !prev)}
+                                            className={`flex items-center gap-3 p-3 rounded-xl border select-none transition-all
+                                                ${!canApprove
+                                                    ? "bg-gray-50 border-gray-200 opacity-50 cursor-not-allowed"
+                                                    : isApproved
+                                                        ? "bg-emerald-50 border-emerald-300 cursor-pointer"
+                                                        : "bg-white border-gray-200 hover:border-emerald-200 cursor-pointer"
                                                 }`}
                                         >
                                             <div
                                                 className={`w-4 h-4 rounded flex items-center justify-center border-2 shrink-0 transition-all
-                                                    ${isApproved
+                                                    ${isApproved && canApprove
                                                         ? "bg-emerald-500 border-emerald-500"
                                                         : "border-gray-300 bg-white"
                                                     }`}
                                             >
-                                                {isApproved && (
+                                                {isApproved && canApprove && (
                                                     <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 12 12" fill="none">
                                                         <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                                     </svg>
                                                 )}
                                             </div>
                                             <div>
-                                                <p className={`text-xs font-semibold ${isApproved ? "text-emerald-700" : "text-gray-700"}`}>
+                                                <p className={`text-xs font-semibold ${isApproved && canApprove ? "text-emerald-700" : "text-gray-700"}`}>
                                                     Mark as Approved
                                                 </p>
                                                 <p className="text-[10px] text-gray-400 mt-0.5">
-                                                    Approve this inspection in the report
+                                                    {!canApprove
+                                                        ? "Cannot approve — defect detected"
+                                                        : "Approve this inspection in the report"}
                                                 </p>
                                             </div>
                                         </div>
+
                                         <button
                                             onClick={() => {
                                                 if (!correctLabel.trim() || !userDescription.trim()) {
@@ -590,7 +584,8 @@ export default function InspectionDetailPage() {
                         </div>
                     </div>
 
-                                        <div className={`${panel} flex flex-col shrink-0`}>
+                    {/* ── Verification Actions ── */}
+                    <div className={`${panel} flex flex-col shrink-0`}>
                         <SectionHeader
                             icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
                             iconBg="bg-emerald-50"
@@ -665,11 +660,23 @@ export default function InspectionDetailPage() {
                                 Confirm Verification
                             </h3>
                         </div>
+
                         <p className="text-gray-600 leading-relaxed">
                             Are you sure you want to verify this inspection? This action
                             confirms that the AI detection is correct and will mark the
                             inspection as human verified.
                         </p>
+
+                        {/* ✅ FIX: Warning inside modal if defect detected */}
+                        {inspection.is_defect && (
+                            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 border border-red-200">
+                                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                                <p className="text-xs text-red-700 font-medium leading-relaxed">
+                                    This inspection has a defect. It will be verified but <span className="font-bold">not approved</span>.
+                                </p>
+                            </div>
+                        )}
+
                         <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
                             <button
                                 onClick={() => setShowVerifyPopup(false)}

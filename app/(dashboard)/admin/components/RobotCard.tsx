@@ -84,7 +84,6 @@ export function RobotCard({
               }
             }
           } catch (error) {
-            console.error("Failed to parse WebSocket message:", error);
           }
         };
 
@@ -101,7 +100,6 @@ export function RobotCard({
 
         wsRef.current = ws;
       } catch (error) {
-        console.error("Failed to create WebSocket connection:", error);
       }
     };
 
@@ -155,7 +153,6 @@ export function RobotCard({
       await onToggleActive(localRobot.id, localRobot.is_active);
       setLocalRobot((prev: any) => ({ ...prev, is_active: !prev.is_active }));
     } catch (error) {
-      console.error(`Failed to toggle robot ${robot.robo_id}:`, error);
       alert("Failed to update robot status. Please try again.");
     } finally {
       setLocalToggling(false);
@@ -175,7 +172,6 @@ export function RobotCard({
     try {
       await onDelete(localRobot.id, localRobot.name);
     } catch (error) {
-      console.error(`Failed to delete robot ${localRobot.id}:`, error);
       alert("Failed to delete robot. Please try again.");
     } finally {
       setIsDeleting(false);

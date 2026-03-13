@@ -225,9 +225,6 @@ const Dashboard: React.FC = () => {
 
     const setupWebSocket = (robot: Robot) => {
         if (!robot.robo_id) {
-            console.warn(
-                `⚠️ WebSocket not initialized: robo_id is missing for robot ${robot.name}`,
-            );
             return;
         }
 
@@ -303,15 +300,10 @@ const Dashboard: React.FC = () => {
                             );
                         }
                     } catch (err) {
-                        console.error(
-                            `❌ WebSocket message parse error for ${roboId}:`,
-                            err,
-                        );
                     }
                 };
 
                 ws.onerror = (err) => {
-                    console.error(`❌ WebSocket error for ${roboId}:`, err);
                     setWsStatus((prev) =>
                         new Map(prev).set(roboId, "disconnected"),
                     );
@@ -328,7 +320,6 @@ const Dashboard: React.FC = () => {
                     }
                 };
             } catch (err) {
-                console.error(`❌ WebSocket init failed for ${roboId}:`, err);
                 setWsStatus((prev) =>
                     new Map(prev).set(roboId, "disconnected"),
                 );
@@ -363,9 +354,7 @@ const Dashboard: React.FC = () => {
                 robotsWsRef.current = ws;
 
                 ws.onopen = () => {
-                    console.log(
-                        `✅ Robots global WebSocket connected (user: ${userId})`,
-                    );
+                    setWsStatus((prev) => new Map(prev).set("robots", "connected"));
                 };
 
                 ws.onmessage = async (event) => {
@@ -462,30 +451,22 @@ const Dashboard: React.FC = () => {
                                     }
                                 });
                             } catch (err) {
-                                console.error(
-                                    "❌ Failed to refresh robots after event:",
-                                    err,
-                                );
                             }
                         }
                     } catch (err) {
-                        console.error("❌ Robots WebSocket parse error:", err);
                     }
                 };
 
                 ws.onerror = (err) => {
-                    console.error("❌ Robots WebSocket error:", err);
-                };
+                    setWsStatus((prev) => new Map(prev).set("robots", "disconnected"));};
 
                 ws.onclose = () => {
-                    console.warn("⚠️ Robots WebSocket disconnected");
                     robotsWsRef.current = null;
                     if (!isManualClose) {
                         reconnectTimeout = setTimeout(connect, 3000);
                     }
                 };
             } catch (err) {
-                console.error("❌ Robots WebSocket init failed:", err);
                 if (!isManualClose) {
                     reconnectTimeout = setTimeout(connect, 3000);
                 }
@@ -574,13 +555,10 @@ const Dashboard: React.FC = () => {
                     if (userId) {
                         setupRobotsWebSocket(userId);
                     } else {
-                        console.warn(
-                            "⚠️ Could not determine userId — robots WebSocket not started",
-                        );
+                    
                     }
                 }
             } catch (err) {
-                console.error("Robot fetch failed:", err);
                 setError("Failed to load robot data");
                 setRobots([]);
             } finally {
@@ -632,7 +610,6 @@ const Dashboard: React.FC = () => {
             document.cookie = "role=; path=/; max-age=0; SameSite=Lax";
             window.location.href = "/login";
         } catch (error) {
-            console.error("Logout error:", error);
             window.location.href = "/login";
         }
     };
@@ -940,10 +917,6 @@ const Dashboard: React.FC = () => {
                                 </div>
                             </div>
                         )}
-
-                        {/* Metric cards
-                              On lg (1024-1279): single column stack
-                              On xl (≥1280): 2-column grid for compact display  */}
                         <div className="grid grid-cols-1 xl:grid-cols-1 gap-3">
                             <div className="bg-slate-50/70 p-3 xl:p-4 rounded-lg border border-slate-200/50 transition-all duration-150 hover:bg-slate-50">
                                 <div className="flex items-center justify-between mb-1">

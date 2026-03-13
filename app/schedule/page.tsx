@@ -174,7 +174,6 @@ function DashboardContent() {
                     if (robot.robo_id) setRoboId(robot.robo_id);
                 }
             } catch (error) {
-                console.error("Error fetching robot data:", error);
             }
         };
         fetchRobotData();
@@ -311,11 +310,9 @@ function DashboardContent() {
                             );
                         }
                     } catch (err) {
-                        console.error("❌ WS message parse error:", err);
                     }
                 };
 
-                ws.onerror = (err) => console.error("❌ WS error:", err);
 
                 ws.onclose = () => {
                     setWsConnected(false);
@@ -324,7 +321,6 @@ function DashboardContent() {
                         reconnectTimeout = setTimeout(connect, 3000);
                 };
             } catch (err) {
-                console.error("❌ WS init failed:", err);
                 if (!isManualClose)
                     reconnectTimeout = setTimeout(connect, 3000);
             }

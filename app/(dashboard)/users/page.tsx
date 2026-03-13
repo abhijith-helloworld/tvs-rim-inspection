@@ -64,7 +64,6 @@ export default function Page() {
                 setError(json.results?.message || "Failed to fetch users");
             }
         } catch (err) {
-            console.error("Users fetch error:", err);
             setError(
                 err instanceof Error ? err.message : "Failed to fetch users",
             );

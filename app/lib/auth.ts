@@ -212,7 +212,6 @@ export const refreshAccessToken = async (): Promise<string | null> => {
     onRefreshed(data.access);
     return data.access;
   } catch (error) {
-    console.error("Refresh error:", error);
     tokenStorage.clearTokens();
     window.location.href = "/login";
     return null;

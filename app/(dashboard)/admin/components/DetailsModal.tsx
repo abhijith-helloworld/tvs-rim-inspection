@@ -130,7 +130,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     const parsedData = JSON.parse(savedData);
                     setWsData(parsedData);
                 } catch (error) {
-                    console.error("Failed to parse saved robot data:", error);
                 }
             }
         }
@@ -147,7 +146,6 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                 };
                 localStorage.setItem(savedDataKey, JSON.stringify(dataToSave));
             } catch (error) {
-                console.error("Failed to save robot data:", error);
             }
         }
     }, [wsData, robot?.robo_id]);
@@ -439,12 +437,10 @@ export function DetailsModal({ isOpen, onClose, robot }: DetailsModalProps) {
                     }));
                 }
             } catch (err) {
-                console.error("WebSocket message parse error:", err);
             }
         };
 
         ws.onerror = (err) => {
-            console.error("WebSocket error:", err);
             setWsError(true);
         };
 

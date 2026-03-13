@@ -87,7 +87,6 @@ export default function RimTypePage() {
             }
         } catch (err) {
             setError("Something went wrong while fetching rim types");
-            console.error("Fetch error:", err);
         } finally {
             setLoading(false);
         }
@@ -163,7 +162,6 @@ export default function RimTypePage() {
             }
         } catch (err) {
             alert("Failed to save rim type");
-            console.error("Submit error:", err);
         }
     };
 

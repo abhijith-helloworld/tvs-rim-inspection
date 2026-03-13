@@ -73,7 +73,6 @@ export class RobotWebSocketManager {
 
                 // Error occurred
                 this.ws.onerror = (event) => {
-                    console.error("❌ WebSocket error:", event);
                     if (this.config.onError) {
                         this.config.onError(new Error("WebSocket error occurred"));
                     }
@@ -82,7 +81,6 @@ export class RobotWebSocketManager {
 
                 // Connection closed
                 this.ws.onclose = () => {
-                    console.warn("⚠️  WebSocket disconnected");
                     this.stopHeartbeat();
 
                     if (this.config.onDisconnected) {
@@ -95,7 +93,6 @@ export class RobotWebSocketManager {
                     }
                 };
             } catch (error) {
-                console.error("❌ WebSocket connection error:", error);
                 reject(error);
             }
         });
@@ -123,11 +120,9 @@ export class RobotWebSocketManager {
                 this.ws.send(JSON.stringify(message));
                 return true;
             } catch (error) {
-                console.error("❌ Failed to send message:", error);
                 return false;
             }
         } else {
-            console.warn("⚠️  WebSocket not connected, queueing message");
             this.messageQueue.push(message);
             return false;
         }
@@ -167,7 +162,6 @@ export class RobotWebSocketManager {
                     }
             }
         } catch (error) {
-            console.error("❌ Failed to parse WebSocket message:", error);
         }
     }
 
@@ -188,9 +182,6 @@ export class RobotWebSocketManager {
      */
     private attemptReconnect(): void {
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.error(
-                "❌ Max reconnection attempts reached. Stopping reconnect."
-            );
             return;
         }
 
@@ -198,7 +189,6 @@ export class RobotWebSocketManager {
         const delay = this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1);
         setTimeout(() => {
             this.connect().catch((error) => {
-                console.error("❌ Reconnection failed:", error);
             });
         }, delay);
     }
@@ -257,7 +247,6 @@ export function useRobotWebSocket(
 
     React.useEffect(() => {
         if (!robotId) {
-            console.warn("⚠️  No robotId provided to useRobotWebSocket");
             return;
         }
 
@@ -275,14 +264,12 @@ export function useRobotWebSocket(
                 setConnected(false);
             },
             onError: (err) => {
-                console.error("⚠️  WebSocket error:", err);
                 setError(err.message);
             },
         });
 
         // Connect
         wsManagerRef.current.connect().catch((err) => {
-            console.error("❌ Failed to connect WebSocket:", err);
             setError(err.message);
         });
 
