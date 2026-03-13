@@ -211,7 +211,7 @@ export default function InspectionDetailPage() {
             const data = await res.json();
             setInspection(data.inspection);
 
-            // ✅ FIX: Never approve a defective inspection
+            // Never approve a defective inspection
             const isDefect = data.inspection?.is_defect ?? false;
             setIsApproved(isDefect ? false : (data.inspection?.is_approved ?? false));
         } catch (error: any) {
@@ -231,8 +231,14 @@ export default function InspectionDetailPage() {
         try {
             setVerifyLoading(true);
             const payload = {
-                // ✅ FIX: Force is_approved to false when defect is detected
-                is_approved:      inspection?.is_defect ? false : isApproved,
+                // Defect → never approved
+                // Normal verify, no defect → auto-approve (true)
+                // False detection form → use the isApproved toggle (still blocked if defect)
+                is_approved: inspection?.is_defect
+                    ? false
+                    : falseDetectedValue
+                        ? isApproved
+                        : true,
                 false_detected:   falseDetectedValue,
                 user_description: falseDetectedValue ? userDescription : "",
                 correct_label:    falseDetectedValue ? correctLabel    : "",
@@ -297,7 +303,7 @@ export default function InspectionDetailPage() {
     const inspectedDate     = new Date(inspection.inspected_at);
     const isAlreadyVerified = inspection.is_human_verified;
     const isFalseDetected   = inspection.false_detected;
-    // ✅ FIX: Defective inspections can never be approved
+    // Defective inspections can never be approved
     const canApprove        = !inspection.is_defect;
 
     /* Shared styles */
@@ -433,13 +439,14 @@ export default function InspectionDetailPage() {
                                     value={inspection.is_human_verified ? "Yes" : "No"}
                                     status={inspection.is_human_verified ? "success" : "neutral"}
                                 />
-                                {/* ✅ FIX: Approved badge blocked when defect detected */}
+                                {/* Approved: true whenever no defect, false when defect */}
                                 <DetailBadge
                                     label="Approved"
-                                    value={inspection.is_defect ? "No" : (inspection.is_approved ? "Yes" : "No")}
-                                    status={inspection.is_defect ? "neutral" : (inspection.is_approved ? "success" : "neutral")}
+                                    value={inspection.is_defect ? "No" : "Yes"}
+                                    status={inspection.is_defect ? "neutral" : "success"}
                                 />
                             </div>
+
                             {/* False Detection Details */}
                             {inspection.false_detected && (
                                 <div className="rounded-xl border border-amber-200 overflow-hidden">
@@ -525,7 +532,7 @@ export default function InspectionDetailPage() {
                                             />
                                         </div>
 
-                                        {/* ✅ FIX: Approved toggle — disabled when defect detected */}
+                                        {/* Approved toggle — disabled when defect detected */}
                                         <div
                                             onClick={() => canApprove && setIsApproved((prev) => !prev)}
                                             className={`flex items-center gap-3 p-3 rounded-xl border select-none transition-all
@@ -667,7 +674,7 @@ export default function InspectionDetailPage() {
                             inspection as human verified.
                         </p>
 
-                        {/* ✅ FIX: Warning inside modal if defect detected */}
+                        {/* Warning inside modal if defect detected */}
                         {inspection.is_defect && (
                             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 border border-red-200">
                                 <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
