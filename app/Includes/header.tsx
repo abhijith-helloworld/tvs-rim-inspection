@@ -14,8 +14,10 @@ import {
     BatteryWarning,
     Zap,
     Settings,
+    Home,
     type LucideIcon,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import type { RobotData, BatteryStatus, RobotStatus } from "../types/robot";
 import { fetchWithAuth, API_BASE_URL } from "../lib/auth";
@@ -58,6 +60,25 @@ const DEFAULT_ROBOT_STATUS: RobotStatus = {
 };
 
 const ROBOT_STATUS_TIMEOUT_MS = 3000;
+
+/* ================================================================
+   HOME BUTTON
+   ================================================================ */
+
+const HomeButton = () => {
+    const router = useRouter();
+
+    return (
+        <button
+            onClick={() => router.push("/userDashboard")}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all duration-200 whitespace-nowrap bg-white border-slate-200 text-slate-600 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700 active:scale-95 shadow-sm"
+            title="Go to Home"
+        >
+            <Home className="w-4 h-4" />
+            <span>Go to Home</span>
+        </button>
+    );
+};
 
 /* ================================================================
    OPERATION MODE BUTTON
@@ -302,25 +323,14 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
     onOperationModeUpdated,
     ws,
 }) => {
-    // ── Operation mode — always fetched from API, never from static props ─────
     const [operationMode, setOperationMode] = useState<OperationMode | null>(null);
     const [isLoadingMode, setIsLoadingMode] = useState(false);
 
-    /**
-     * minimumCharge priority:
-     *   1. liveMinimumCharge  → updated after API fetch triggered by WS event
-     *   2. robotData prop     → initial value from parent
-     *   3. hard-coded default → 20
-     */
     const [liveMinimumCharge, setLiveMinimumCharge] = useState<number | null>(null);
     const minimumCharge = liveMinimumCharge ?? robotData?.minimum_battery_charge ?? 20;
 
-    // Guard against double-fetching on mount
     const hasFetchedRef = useRef(false);
 
-    /* ------------------------------------------------------------------
-       fetchOperationMode — GET /api/robots/{id}/operation-mode/
-    ------------------------------------------------------------------ */
     const fetchOperationMode = useCallback(
         (robotId: number | string) => {
             setIsLoadingMode(true);
@@ -347,32 +357,18 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                     if (mode) {
                         setOperationMode(mode);
                         onOperationModeUpdated?.(mode);
-                    } else {
                     }
                     setIsLoadingMode(false);
                 })
-                .catch((err) => {
+                .catch(() => {
                     setIsLoadingMode(false);
                 });
         },
         [onOperationModeUpdated],
     );
 
-    /* ------------------------------------------------------------------
-       fetchMinimumBatteryCharge
-       Triggered by min_battery_updated WS event.
-       Calls GET /api/robots/{id}/ and extracts minimum_battery_charge.
-
-       Handles all known response shapes:
-         • { minimum_battery_charge: 90 }
-         • { data: { minimum_battery_charge: 90 } }
-         • { results: { data: { minimum_battery_charge: 90 } } }
-         • { results: { minimum_battery_charge: 90 } }
-    ------------------------------------------------------------------ */
     const fetchMinimumBatteryCharge = useCallback(() => {
-        if (!robotData?.id) {
-            return;
-        }
+        if (!robotData?.id) return;
 
         const url = `${API_BASE_URL}/robots/${robotData.id}/`;
         fetchWithAuth(url, {
@@ -392,46 +388,29 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                 if (!result) return;
                 let minCharge: number | null = null;
 
-                // Shape 1: flat  { minimum_battery_charge: 90 }
                 if (typeof result?.minimum_battery_charge === "number") {
                     minCharge = result.minimum_battery_charge;
-                }
-                // Shape 2: { data: { minimum_battery_charge: 90 } }
-                else if (typeof result?.data?.minimum_battery_charge === "number") {
+                } else if (typeof result?.data?.minimum_battery_charge === "number") {
                     minCharge = result.data.minimum_battery_charge;
-                }
-                // Shape 3: { results: { data: { minimum_battery_charge: 90 } } }
-                else if (typeof result?.results?.data?.minimum_battery_charge === "number") {
+                } else if (typeof result?.results?.data?.minimum_battery_charge === "number") {
                     minCharge = result.results.data.minimum_battery_charge;
-                }
-                // Shape 4: { results: { minimum_battery_charge: 90 } }
-                else if (typeof result?.results?.minimum_battery_charge === "number") {
+                } else if (typeof result?.results?.minimum_battery_charge === "number") {
                     minCharge = result.results.minimum_battery_charge;
                 }
 
                 if (minCharge !== null) {
                     setLiveMinimumCharge(minCharge);
-                } else {
                 }
             })
             .catch((err) => console.error("[min-battery] fetch failed:", err));
     }, [robotData?.id]);
 
-    /* ------------------------------------------------------------------
-       1. MOUNT — fetch operation mode once when robotData is available
-    ------------------------------------------------------------------ */
     useEffect(() => {
         if (!robotData?.id || hasFetchedRef.current) return;
         hasFetchedRef.current = true;
         fetchOperationMode(robotData.id);
     }, [robotData?.id, fetchOperationMode]);
 
-    /* ------------------------------------------------------------------
-       2. WEBSOCKET — listen for operation_mode_updated & min_battery_updated
-       Both events arrive on the same ws/robot_message/{roboId}/ socket
-       that is already open in the parent (userDashboard/page.tsx) and
-       passed down via the `ws` prop.
-    ------------------------------------------------------------------ */
     useEffect(() => {
         if (!ws) return;
 
@@ -455,32 +434,18 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
             } catch {
                 return;
             }
-            /* ── operation_mode_updated ─────────────────────────────── */
+
             if (message.event === "operation_mode_updated") {
                 const robotId = message.data?.robot_id ?? robotData?.id;
-                if (!robotId) {
-                    return;
-                }
+                if (!robotId) return;
                 fetchOperationMode(robotId);
             }
 
-            /* ── min_battery_updated ────────────────────────────────────
-               Payload: { "event": "min_battery_updated",
-                          "data": { "robot_id": 1,
-                                    "minimum_battery_charge": 90 } }
-
-               Strategy:
-                 ① Apply inline value instantly  → UI updates with no delay
-                 ② Call API for authoritative confirm (fire-and-forget)
-            ─────────────────────────────────────────────────────────── */
             if (message.event === "min_battery_updated") {
-                // ① Fast path — inline value present
                 const inlineValue = message.data?.minimum_battery_charge;
                 if (typeof inlineValue === "number") {
                     setLiveMinimumCharge(inlineValue);
                 }
-
-                // ② Always confirm with API (handles missing inline value too)
                 fetchMinimumBatteryCharge();
             }
         };
@@ -492,8 +457,14 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
     return (
         <header className="mb-3">
             <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 bg-gradient-to-r from-gray-50 to-gray-100 px-4 py-4 rounded-2xl border border-slate-200 shadow-sm transition-all duration-300">
-                {/* Left: Title + Subtitle */}
+
+                {/* Left: Home Button + Title + Subtitle */}
                 <div className="flex-shrink-0">
+                    {/* Home button — sits above and before the title */}
+                    <div className="mb-2.5">
+                    </div>
+
+                    {/* Title row */}
                     <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight flex items-center gap-3">
                         <Icon className="text-slate-700 flex-shrink-0" size={28} />
                         <span className="bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
@@ -505,20 +476,21 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                     </p>
                 </div>
 
-                {/* Right: Controls Grid */}
+                {/* Right: Controls Grid (unchanged) */}
                 <div className="flex flex-col gap-3 w-full lg:w-auto lg:flex-shrink-0">
                     {/* Top Row: Connection, Battery, Operation Mode */}
-                        <div className="flex flex-wrap justify-end items-center gap-2 sm:gap-3">
-                            <ConnectionStatus wsConnected={wsConnected} />
-                            <BatteryIndicator
-                                level={battery.level}
-                                status={battery.status}
-                                minimumCharge={minimumCharge}
-                            />
-                            <div className={`transition-opacity duration-300 ${isLoadingMode ? "opacity-60" : "opacity-100"}`}>
-                                <OperationModeButton mode={operationMode} />
-                            </div>
+                    <div className="flex flex-wrap justify-end items-center gap-2 sm:gap-3">
+                        <ConnectionStatus wsConnected={wsConnected} />
+                        <HomeButton />
+                        <BatteryIndicator
+                            level={battery.level}
+                            status={battery.status}
+                            minimumCharge={minimumCharge}
+                        />
+                        <div className={`transition-opacity duration-300 ${isLoadingMode ? "opacity-60" : "opacity-100"}`}>
+                            <OperationModeButton mode={operationMode} />
                         </div>
+                    </div>
 
                     {/* Bottom Row: Robot Status Panel, Date/Time */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
@@ -526,6 +498,7 @@ const RobotDashboardHeader: React.FC<RobotDashboardHeaderProps> = ({
                         <DateTimeDisplay time={time} />
                     </div>
                 </div>
+
             </div>
         </header>
     );

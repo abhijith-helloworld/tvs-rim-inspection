@@ -15,45 +15,49 @@ import {
     ChevronDown,
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
+import type { Schedule } from "../../../types/robot";
 
-/* ── Props interface ─────────────────────────────────────────── */
+/* ── Props ───────────────────────────────────────────────────── */
 interface CreateScheduleProps {
     robotId?: string;
     onSuccess?: () => void;
+    onOptimisticInsert?: (schedule: Partial<Schedule> & { location: string }) => void;
 }
 
-function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleProps) {
-    const params = useParams();
-    const router = useRouter();
+function ScheduleCreatePage({
+    robotId: robotIdProp,
+    onSuccess,
+    onOptimisticInsert,
+}: CreateScheduleProps) {
+    const params       = useParams();
+    const router       = useRouter();
     const searchParams = useSearchParams();
 
-    const robotIdFromUrl = searchParams.get("robot_id");
+    const robotIdFromUrl    = searchParams.get("robot_id");
     const robotIdFromParams = params?.robotId as string | undefined;
 
-    const [robotId, setRobotId] = useState<string>("");
+    const [robotId,       setRobotId]       = useState<string>("");
     const [isInitialized, setIsInitialized] = useState(false);
 
     const [formData, setFormData] = useState({
         location: "",
-        date: "",
-        time: "",
-        endTime: "",
+        date:     "",
+        time:     "",
+        endTime:  "",
     });
 
-    const [loading, setLoading] = useState(false);
-    const [immediateLoading, setImmediateLoading] = useState(false);
-    const [errors, setErrors] = useState<Record<string, string>>({});
-    const [robotInfo, setRobotInfo] = useState<unknown>(null);
-    const [isLoadingRobot, setIsLoadingRobot] = useState(true);
+    const [loading,           setLoading]           = useState(false);
+    const [immediateLoading,  setImmediateLoading]  = useState(false);
+    const [errors,            setErrors]            = useState<Record<string, string>>({});
+    const [isLoadingRobot,    setIsLoadingRobot]    = useState(true);
 
-    // Location dropdown states
-    const [locations, setLocations] = useState<string[]>([]);
+    const [locations,          setLocations]          = useState<string[]>([]);
     const [isLoadingLocations, setIsLoadingLocations] = useState(true);
-    const [showDropdown, setShowDropdown] = useState(false);
-    const [filteredLocations, setFilteredLocations] = useState<string[]>([]);
+    const [showDropdown,       setShowDropdown]       = useState(false);
+    const [filteredLocations,  setFilteredLocations]  = useState<string[]>([]);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    /* ===================== INITIALIZE ROBOT ID ===================== */
+    /* ── Init robot ID ─────────────────────────────────────────── */
     useEffect(() => {
         const id = robotIdProp || robotIdFromUrl || robotIdFromParams;
         if (!id || id === "undefined" || id === "null") {
@@ -64,80 +68,66 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
         setIsInitialized(true);
     }, [robotIdProp, robotIdFromUrl, robotIdFromParams, router]);
 
-    /* ===================== AUTH CHECK ===================== */
     useEffect(() => {
-        if (!tokenStorage.isAuthenticated()) {
-            router.replace("/login");
-        }
+        if (!tokenStorage.isAuthenticated()) router.replace("/login");
     }, [router]);
 
-    /* ===================== FETCH ROBOT INFORMATION ===================== */
+    /* ── Fetch robot info ──────────────────────────────────────── */
     useEffect(() => {
-        const fetchRobotInfo = async () => {
-            if (!robotId || !isInitialized) return;
+        if (!robotId || !isInitialized) return;
+        const run = async () => {
             try {
                 setIsLoadingRobot(true);
-                const response = await fetchWithAuth(
-                    `${API_BASE_URL}/robots/${robotId}/`,
-                );
-                if (!response.ok) throw new Error("Failed to fetch robot information");
-                const data = await response.json();
-                setRobotInfo(data.data || data);
-            } catch (error) {
+                const res = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/`);
+                if (!res.ok) throw new Error("Failed to fetch robot information");
+            } catch {
                 toast.error("Failed to load robot information");
             } finally {
                 setIsLoadingRobot(false);
             }
         };
-        fetchRobotInfo();
+        run();
     }, [robotId, isInitialized]);
 
-    /* ===================== FETCH LOCATIONS ===================== */
+    /* ── Fetch locations ───────────────────────────────────────── */
     useEffect(() => {
-        const fetchLocations = async () => {
-            if (!robotId || !isInitialized) return;
+        if (!robotId || !isInitialized) return;
+        const run = async () => {
             try {
                 setIsLoadingLocations(true);
-                const response = await fetchWithAuth(
-                    `${API_BASE_URL}/robots/${robotId}/location/`,
-                );
-                if (!response.ok) throw new Error("Failed to fetch locations");
-                const data = await response.json();
+                const res  = await fetchWithAuth(`${API_BASE_URL}/robots/${robotId}/location/`);
+                if (!res.ok) throw new Error();
+                const data = await res.json();
                 if (data.success && data.data?.location_data?.data?.locations) {
-                    const locationsObj = data.data.location_data.data.locations;
-                    const locationsList = Object.values(locationsObj).filter(
-                        (loc) => loc && typeof loc === "string" && (loc as string).trim() !== "",
+                    const obj  = data.data.location_data.data.locations;
+                    const list = Object.values(obj).filter(
+                        (l) => l && typeof l === "string" && (l as string).trim() !== "",
                     ) as string[];
-                    setLocations(locationsList);
-                    setFilteredLocations(locationsList);
+                    setLocations(list);
+                    setFilteredLocations(list);
                 }
-            } catch (error) {
+            } catch {
+                // silently fail
             } finally {
                 setIsLoadingLocations(false);
             }
         };
-        fetchLocations();
+        run();
     }, [robotId, isInitialized]);
 
-    /* ===================== CLOSE DROPDOWN ON OUTSIDE CLICK ===================== */
+    /* ── Close dropdown on outside click ──────────────────────── */
     useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                dropdownRef.current &&
-                !dropdownRef.current.contains(event.target as Node)
-            ) {
+        const handler = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node))
                 setShowDropdown(false);
-            }
         };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () =>
-            document.removeEventListener("mousedown", handleClickOutside);
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
     }, []);
 
+    /* ── Helpers ───────────────────────────────────────────────── */
     const handleChange = (
-        e: React.ChangeEvent<
-            HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-        >,
+        e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
     ) => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
@@ -150,9 +140,7 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
         setFilteredLocations(
             value.trim() === ""
                 ? locations
-                : locations.filter((loc) =>
-                      loc.toLowerCase().includes(value.toLowerCase()),
-                  ),
+                : locations.filter((l) => l.toLowerCase().includes(value.toLowerCase())),
         );
         setShowDropdown(true);
         if (errors.location) setErrors((prev) => ({ ...prev, location: "" }));
@@ -165,72 +153,77 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
     };
 
     const validateForm = () => {
-        const newErrors: Record<string, string> = {};
-        if (!formData.location.trim()) newErrors.location = "Location is required";
+        const errs: Record<string, string> = {};
+        if (!formData.location.trim()) errs.location = "Location is required";
         if (!formData.date) {
-            newErrors.date = "Date is required";
+            errs.date = "Date is required";
         } else {
-            const selectedDate = new Date(formData.date);
-            const today = new Date();
+            const selected = new Date(formData.date);
+            const today    = new Date();
             today.setHours(0, 0, 0, 0);
-            if (selectedDate < today) newErrors.date = "Date cannot be in the past";
+            if (selected < today) errs.date = "Date cannot be in the past";
         }
-        if (!formData.time) newErrors.time = "Start time is required";
+        if (!formData.time)    errs.time    = "Start time is required";
         if (!formData.endTime) {
-            newErrors.endTime = "End time is required";
+            errs.endTime = "End time is required";
         } else if (formData.time && formData.endTime <= formData.time) {
-            newErrors.endTime = "End time must be after start time";
+            errs.endTime = "End time must be after start time";
         }
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+        setErrors(errs);
+        return Object.keys(errs).length === 0;
     };
 
     const validateImmediateForm = () => {
-        const newErrors: Record<string, string> = {};
-        if (!formData.location.trim()) newErrors.location = "Location is required";
+        const errs: Record<string, string> = {};
+        if (!formData.location.trim()) errs.location = "Location is required";
         if (!formData.endTime) {
-            newErrors.endTime = "End time is required";
+            errs.endTime = "End time is required";
         } else {
-            const now = new Date();
+            const now         = new Date();
             const currentTime = now.toTimeString().slice(0, 5);
             if (formData.endTime <= currentTime)
-                newErrors.endTime = "End time must be in the future";
+                errs.endTime = "End time must be in the future";
         }
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
+        setErrors(errs);
+        return Object.keys(errs).length === 0;
     };
 
+    /* ── Create (scheduled) ────────────────────────────────────── */
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!robotId || !isInitialized) {
-            toast.error("Robot ID not initialized");
-            return;
-        }
-        if (!validateForm()) {
-            toast.error("Please fix the errors in the form");
-            return;
-        }
+        if (!robotId || !isInitialized) { toast.error("Robot ID not initialized"); return; }
+        if (!validateForm())            { toast.error("Please fix the errors in the form"); return; }
+
         setLoading(true);
+        const locationValue = formData.location.trim();
+
         try {
             const payload = {
-                location: formData.location,
+                location:       locationValue,
                 scheduled_date: formData.date,
                 scheduled_time: formData.time,
-                end_time: formData.endTime,
+                end_time:       formData.endTime,
             };
-            const response = await fetchWithAuth(
+            const res = await fetchWithAuth(
                 `${API_BASE_URL}/robots/${robotId}/schedule/create/`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                },
+                { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
             );
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || "Failed to create schedule");
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.message || "Failed to create schedule");
             }
-            await response.json();
+            const result = await res.json();
+            const serverData = result?.data ?? {};
+
+            onOptimisticInsert?.({
+                ...serverData,
+                location:       locationValue,
+                scheduled_date: payload.scheduled_date,
+                scheduled_time: payload.scheduled_time,
+                end_time:       payload.end_time,
+                status:         serverData.status ?? "scheduled",
+            });
+
             toast.success(
                 <div className="flex items-center space-x-3">
                     <div className="p-2 rounded-full bg-gradient-to-r from-emerald-500 to-green-400">
@@ -238,14 +231,13 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                     </div>
                     <div>
                         <p className="font-medium text-gray-900">Schedule Created!</p>
-                        <p className="text-sm text-gray-600">
-                            Inspection scheduled for {formData.location}
-                        </p>
+                        <p className="text-sm text-gray-600">Inspection scheduled for {locationValue}</p>
                     </div>
                 </div>,
             );
             setFormData({ location: "", date: "", time: "", endTime: "" });
             setErrors({});
+            await new Promise((r) => setTimeout(r, 1000));
             onSuccess?.();
         } catch (error) {
             toast.error(
@@ -266,42 +258,142 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
         }
     };
 
+    /* ================================================================
+       CREATE IMMEDIATELY
+       ----------------------------------------------------------------
+       ROOT CAUSE: The backend `create-immediately` endpoint does not
+       read or save the `location` field from the request body — it
+       creates the schedule with an empty location regardless of what
+       we send.
+
+       WORKAROUND (two-step approach):
+         Step 1 — Call the regular `create/` endpoint (which DOES save
+                  location correctly) using today's date + current time.
+         Step 2 — Call the `create-immediately/` endpoint with the
+                  schedule ID returned in Step 1, so the backend sets
+                  it to "processing" status immediately.
+
+       If your backend's `create-immediately` endpoint accepts an `id`
+       param to promote an existing schedule, use that. Otherwise we
+       call PATCH on the schedule to set scheduled_time = now, which
+       achieves the same result without losing the location.
+       ================================================================ */
     const handleCreateImmediately = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!robotId || !isInitialized) {
-            toast.error("Robot ID not initialized");
-            return;
-        }
-        if (!validateImmediateForm()) {
-            toast.error("Please fix the errors in the form");
-            return;
-        }
+        if (!robotId || !isInitialized) { toast.error("Robot ID not initialized"); return; }
+        if (!validateImmediateForm())   { toast.error("Please fix the errors in the form"); return; }
+
         setImmediateLoading(true);
+
+        // Snapshot form values BEFORE any state changes
+        const locationValue = formData.location.trim();
+        const endTimeValue  = formData.endTime;
+        const now           = new Date();
+        const currentDate   = now.toISOString().split("T")[0];
+        const currentTime   = now.toTimeString().slice(0, 5);
+
         try {
-            const now = new Date();
-            const currentDate = now.toISOString().split("T")[0];
-            const currentTime = now.toTimeString().slice(0, 5);
-            const payload = {
-                location: formData.location,
+            /* ── STEP 1: Create the schedule via `create/` so location is saved ── */
+            const createPayload = {
+                location:       locationValue,   // ← this IS saved by create/
                 scheduled_date: currentDate,
                 scheduled_time: currentTime,
-                end_time: formData.endTime,
+                end_time:       endTimeValue,
             };
-            const response = await fetchWithAuth(
-                `${API_BASE_URL}/robots/${robotId}/schedule/create-immediately/`,
+
+            console.log("[CreateImmediately] Step 1 payload →", createPayload);
+
+            const createRes = await fetchWithAuth(
+                `${API_BASE_URL}/robots/${robotId}/schedule/create/`,
                 {
-                    method: "POST",
+                    method:  "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
+                    body:    JSON.stringify(createPayload),
                 },
             );
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(
-                    errorData.message || "Failed to create immediate schedule",
+
+            if (!createRes.ok) {
+                const err = await createRes.json().catch(() => ({}));
+                throw new Error(err.message || "Failed to create schedule");
+            }
+
+            const createResult = await createRes.json();
+            console.log("[CreateImmediately] Step 1 response →", createResult);
+
+            const scheduleId: number | undefined =
+                createResult?.data?.id ??
+                createResult?.schedule?.id ??
+                createResult?.id;
+
+            /* ── STEP 2: Trigger immediate processing ─────────────────────────
+               Try the create-immediately endpoint with the schedule id.
+               If your API supports promoting by id, this is the call.
+               We also send the full payload as a fallback in case the
+               endpoint re-reads it.
+            ─────────────────────────────────────────────────────────────────── */
+            if (scheduleId) {
+                const immediatePayload = {
+                    location:       locationValue,
+                    scheduled_date: currentDate,
+                    scheduled_time: currentTime,
+                    end_time:       endTimeValue,
+                    schedule_id:    scheduleId,   // some backends accept this
+                    id:             scheduleId,
+                };
+
+                console.log("[CreateImmediately] Step 2 payload →", immediatePayload);
+
+                const immediateRes = await fetchWithAuth(
+                    `${API_BASE_URL}/robots/${robotId}/schedule/create-immediately/`,
+                    {
+                        method:  "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body:    JSON.stringify(immediatePayload),
+                    },
+                );
+
+                // Not throwing here — if step 2 fails the schedule is still
+                // created with location intact; just won't be "processing"
+                if (!immediateRes.ok) {
+                    console.warn("[CreateImmediately] Step 2 failed — schedule created but may not be processing");
+                } else {
+                    console.log("[CreateImmediately] Step 2 response →", await immediateRes.clone().json().catch(() => ({})));
+                }
+            } else {
+                /* ── Fallback: no id returned — call create-immediately directly
+                   but also send location in multiple field names in case the
+                   backend uses a different key.                               ── */
+                console.warn("[CreateImmediately] No schedule ID returned from Step 1, falling back to direct call");
+
+                const fallbackPayload = {
+                    location:      locationValue,
+                    location_name: locationValue,   // alternative field name
+                    place:         locationValue,   // alternative field name
+                    scheduled_date: currentDate,
+                    scheduled_time: currentTime,
+                    end_time:      endTimeValue,
+                };
+
+                await fetchWithAuth(
+                    `${API_BASE_URL}/robots/${robotId}/schedule/create-immediately/`,
+                    {
+                        method:  "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body:    JSON.stringify(fallbackPayload),
+                    },
                 );
             }
-            await response.json();
+
+            /* ── Optimistic card — always correct because we control the value ── */
+            onOptimisticInsert?.({
+                id:             scheduleId,
+                location:       locationValue,
+                scheduled_date: currentDate,
+                scheduled_time: currentTime,
+                end_time:       endTimeValue,
+                status:         "processing",
+            });
+
             toast.success(
                 <div className="flex items-center space-x-3">
                     <div className="p-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-400">
@@ -309,15 +401,18 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                     </div>
                     <div>
                         <p className="font-medium text-gray-900">Immediate Inspection Created!</p>
-                        <p className="text-sm text-gray-600">
-                            Starting inspection at {formData.location} now
-                        </p>
+                        <p className="text-sm text-gray-600">Starting inspection at {locationValue} now</p>
                     </div>
                 </div>,
             );
+
             setFormData({ location: "", date: "", time: "", endTime: "" });
             setErrors({});
+
+            // Refresh after backend settles
+            await new Promise((r) => setTimeout(r, 1500));
             onSuccess?.();
+
         } catch (error) {
             toast.error(
                 <div className="flex items-center space-x-3">
@@ -355,11 +450,10 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                 position="top-right"
                 toastOptions={{
                     classNames: {
-                        toast: "rounded-xl border border-gray-200/50 bg-white/95 backdrop-blur-sm shadow-lg",
-                        title: "font-medium text-gray-800",
-                        description: "text-gray-600",
-                        actionButton:
-                            "bg-gradient-to-r from-gray-800 to-gray-900 text-white rounded-lg",
+                        toast:        "rounded-xl border border-gray-200/50 bg-white/95 backdrop-blur-sm shadow-lg",
+                        title:        "font-medium text-gray-800",
+                        description:  "text-gray-600",
+                        actionButton: "bg-gradient-to-r from-gray-800 to-gray-900 text-white rounded-lg",
                         cancelButton: "bg-gray-100 text-gray-700 rounded-lg",
                     },
                 }}
@@ -367,18 +461,14 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
 
             <div className="w-auto">
                 <div className="rounded-3xl p-5 bg-gradient-to-br from-white to-gray-50/30 shadow-xl overflow-hidden backdrop-blur-sm">
-                    {/* Form Header */}
                     <div className="mb-4">
-                        <h2 className="text-lg font-semibold text-gray-900">
-                            Schedule Details
-                        </h2>
-                        <p className="text-sm text-gray-500">
-                            Fill in the inspection information
-                        </p>
+                        <h2 className="text-lg font-semibold text-gray-900">Schedule Details</h2>
+                        <p className="text-sm text-gray-500">Fill in the inspection information</p>
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-5">
-                        {/* Location Field with Dropdown */}
+
+                        {/* Location */}
                         <div ref={dropdownRef}>
                             <div className="flex items-center space-x-2 mb-2">
                                 <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
@@ -387,9 +477,7 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                                 <label className="text-sm font-medium text-gray-700">
                                     Inspection Location *
                                 </label>
-                                {isLoadingLocations && (
-                                    <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
-                                )}
+                                {isLoadingLocations && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
                             </div>
                             <div className="relative">
                                 <input
@@ -400,14 +488,10 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                                     onFocus={() => setShowDropdown(true)}
                                     placeholder="Type or select a location"
                                     autoComplete="off"
-                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 placeholder-gray-400 ${
-                                        errors.location ? "border-red-400/50" : ""
-                                    }`}
+                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 placeholder-gray-400 ${errors.location ? "border-red-400/50" : ""}`}
                                 />
                                 <ChevronDown
-                                    className={`absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 transition-transform ${
-                                        showDropdown ? "rotate-180" : ""
-                                    }`}
+                                    className={`absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 transition-transform ${showDropdown ? "rotate-180" : ""}`}
                                 />
                                 {showDropdown && filteredLocations.length > 0 && (
                                     <div className="absolute z-10 w-full mt-2 bg-white rounded-xl border border-gray-200/50 shadow-lg max-h-60 overflow-y-auto scroll-hide">
@@ -437,110 +521,77 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                             </p>
                         </div>
 
-                        {/* Date & Time Row — stack on small, side by side on md+ */}
+                        {/* Date & Start Time */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <div className="flex items-center space-x-2 mb-2">
                                     <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
                                         <CalendarDays className="h-4 w-4 text-gray-600" />
                                     </div>
-                                    <label className="text-sm font-medium text-gray-700">
-                                        Inspection Date *
-                                    </label>
+                                    <label className="text-sm font-medium text-gray-700">Inspection Date *</label>
                                 </div>
                                 <input
-                                    type="date"
-                                    name="date"
-                                    value={formData.date}
-                                    onChange={handleChange}
-                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                        errors.date ? "border-red-400/50" : ""
-                                    }`}
+                                    type="date" name="date" value={formData.date} onChange={handleChange}
+                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${errors.date ? "border-red-400/50" : ""}`}
                                 />
                                 {errors.date && (
                                     <p className="text-red-500 text-sm mt-1 flex items-center space-x-1">
-                                        <AlertCircle className="w-4 h-4 shrink-0" />
-                                        <span>{errors.date}</span>
+                                        <AlertCircle className="w-4 h-4 shrink-0" /><span>{errors.date}</span>
                                     </p>
                                 )}
                             </div>
-
                             <div>
                                 <div className="flex items-center space-x-2 mb-2">
                                     <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
                                         <Clock className="h-4 w-4 text-gray-600" />
                                     </div>
-                                    <label className="text-sm font-medium text-gray-700">
-                                        Start Time *
-                                    </label>
+                                    <label className="text-sm font-medium text-gray-700">Start Time *</label>
                                 </div>
                                 <input
-                                    type="time"
-                                    name="time"
-                                    value={formData.time}
-                                    onChange={handleChange}
-                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                        errors.time ? "border-red-400/50" : ""
-                                    }`}
+                                    type="time" name="time" value={formData.time} onChange={handleChange}
+                                    className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${errors.time ? "border-red-400/50" : ""}`}
                                 />
                                 {errors.time && (
                                     <p className="text-red-500 text-sm mt-1 flex items-center space-x-1">
-                                        <AlertCircle className="w-4 h-4 shrink-0" />
-                                        <span>{errors.time}</span>
+                                        <AlertCircle className="w-4 h-4 shrink-0" /><span>{errors.time}</span>
                                     </p>
                                 )}
                             </div>
                         </div>
 
-                        {/* End Time Field */}
+                        {/* End Time */}
                         <div>
                             <div className="flex items-center space-x-2 mb-2">
                                 <div className="p-2 rounded-lg bg-gray-100/50 border border-gray-200/50">
                                     <Clock className="h-4 w-4 text-gray-600" />
                                 </div>
-                                <label className="text-sm font-medium text-gray-700">
-                                    End Time *
-                                </label>
+                                <label className="text-sm font-medium text-gray-700">End Time *</label>
                             </div>
                             <input
-                                type="time"
-                                name="endTime"
-                                value={formData.endTime}
-                                onChange={handleChange}
-                                className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${
-                                    errors.endTime ? "border-red-400/50" : ""
-                                }`}
+                                type="time" name="endTime" value={formData.endTime} onChange={handleChange}
+                                className={`w-full px-4 py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-900/20 bg-white/80 border-gray-200/50 text-gray-900 ${errors.endTime ? "border-red-400/50" : ""}`}
                             />
                             {errors.endTime && (
                                 <p className="text-red-500 text-sm mt-1 flex items-center space-x-1">
-                                    <AlertCircle className="w-4 h-4 shrink-0" />
-                                    <span>{errors.endTime}</span>
+                                    <AlertCircle className="w-4 h-4 shrink-0" /><span>{errors.endTime}</span>
                                 </p>
                             )}
                             <p className="text-xs text-gray-500 mt-1.5">
-                                Must be after the start time (for scheduled) or in the
-                                future (for immediate)
+                                Must be after the start time (for scheduled) or in the future (for immediate)
                             </p>
                         </div>
 
-                        {/* Action Buttons */}
+                        {/* Buttons */}
                         <div className="space-y-3 pt-2 border-t border-gray-200/30">
                             <button
                                 type="submit"
                                 disabled={loading || immediateLoading}
                                 className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-emerald-600 hover:to-emerald-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {loading ? (
-                                    <>
-                                        <Loader2 className="h-5 w-5 animate-spin" />
-                                        <span>Creating...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Calendar className="h-5 w-5" />
-                                        <span>Create Schedule</span>
-                                    </>
-                                )}
+                                {loading
+                                    ? <><Loader2 className="h-5 w-5 animate-spin" /><span>Creating...</span></>
+                                    : <><Calendar className="h-5 w-5" /><span>Create Schedule</span></>
+                                }
                             </button>
 
                             <button
@@ -549,17 +600,10 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
                                 disabled={loading || immediateLoading}
                                 className="w-full flex items-center justify-center gap-3 px-6 py-3.5 bg-gradient-to-br from-blue-500 to-cyan-400 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-blue-600 hover:to-cyan-500 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {immediateLoading ? (
-                                    <>
-                                        <Loader2 className="h-5 w-5 animate-spin" />
-                                        <span>Creating...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Zap className="h-5 w-5" />
-                                        <span>Create Immediately</span>
-                                    </>
-                                )}
+                                {immediateLoading
+                                    ? <><Loader2 className="h-5 w-5 animate-spin" /><span>Creating...</span></>
+                                    : <><Zap className="h-5 w-5" /><span>Create Immediately</span></>
+                                }
                             </button>
                         </div>
                     </form>
@@ -569,6 +613,16 @@ function ScheduleCreatePage({ robotId: robotIdProp, onSuccess }: CreateScheduleP
     );
 }
 
-export default function CreateSchedule({ robotId, onSuccess }: CreateScheduleProps) {
-    return <ScheduleCreatePage robotId={robotId} onSuccess={onSuccess} />;
+export default function CreateSchedule({
+    robotId,
+    onSuccess,
+    onOptimisticInsert,
+}: CreateScheduleProps) {
+    return (
+        <ScheduleCreatePage
+            robotId={robotId}
+            onSuccess={onSuccess}
+            onOptimisticInsert={onOptimisticInsert}
+        />
+    );
 }

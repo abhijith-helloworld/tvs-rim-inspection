@@ -455,8 +455,21 @@ export default function InspectionsBySchedule() {
                     wsConnected={wsConnected}
                     time={time}
                 />
+                <button
+                    onClick={handleBack}
+                    className="inline-flex items-center gap-2 text-gray-600 text-sm font-medium group cursor-pointer mb-2"
+                >
+                    <ArrowLeft
+                        className="w-4 h-4 text-gray-400 group-hover:text-gray-600 group-hover:-translate-x-0.5 transition-all duration-150"
+                    />
+                    <span>
+                        Back to{" "}
+                        <span className="font-semibold text-gray-800">
+                            Schedule
+                        </span>
+                    </span>
+                </button>
             </div>
-
             {/* ── STAT CARDS ── */}
             <div className="flex-shrink-0 px-4 pb-3">
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -494,21 +507,6 @@ export default function InspectionsBySchedule() {
                     />
                 </div>
             </div>
-
-                <button
-                    onClick={handleBack}
-                    className="inline-flex items-center gap-2 text-gray-600 text-sm font-medium group cursor-pointer"
-                >
-                    <ArrowLeft
-                        className="w-4 h-4 text-gray-400 group-hover:text-gray-600 group-hover:-translate-x-0.5 transition-all duration-150"
-                    />
-                    <span>
-                        Back to{" "}
-                        <span className="font-semibold text-gray-800">
-                            {robotData?.name ?? "Robot"}
-                        </span>
-                    </span>
-                </button>
 
             {/* ── ERROR BANNER ── */}
             {fetchError && (

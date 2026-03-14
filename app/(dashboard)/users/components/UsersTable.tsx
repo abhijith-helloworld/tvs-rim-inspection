@@ -304,7 +304,7 @@ export default function UsersTable({
                                                     </button>
 
                                                     {isDropdownOpen && (
-                                                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-20">
+                                                        <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-9999">
                                                             <div className="p-4">
                                                                 <div className="text-sm font-semibold text-gray-900 mb-3">
                                                                     Select Robots

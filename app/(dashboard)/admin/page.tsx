@@ -234,7 +234,7 @@ export default function RobotManagementPage() {
                 </div>
                 <button
                     onClick={() => setModalState({ isOpen: true, robot: null })}
-                    className="w-full sm:w-auto px-4 sm:px-5 py-2.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 transition-colors text-sm sm:text-base"
+                    className="w-full sm:w-auto px-4 sm:px-5 inline-flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 py-2.5 rounded-lg bg-green-500 text-white font-medium hover:bg-green-600 transition-colors text-sm sm:text-base"
                 >
                     Add Robot
                 </button>
